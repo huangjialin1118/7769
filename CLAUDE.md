@@ -5,10 +5,9 @@
 ## 项目结构
 
 ```
-roommate-bills/
+7769/ (项目根目录)
 ├── app.py                 # Flask 主应用文件
 ├── models.py              # 数据库模型定义
-├── run.sh                 # 启动脚本（可选）
 ├── templates/             # HTML 模板
 │   ├── base.html         # 基础模板
 │   ├── index.html        # 首页
@@ -22,7 +21,14 @@ roommate-bills/
 │       └── receipts/    # 凭证文件存储目录
 ├── instance/            # Flask实例文件夹
 │   └── database.db      # SQLite数据库
-└── venv/               # Python虚拟环境
+├── __pycache__/         # Python缓存文件
+├── requirements.txt     # Python依赖
+├── README.md           # 项目文档（英文）
+├── README_CN.md        # 项目文档（中文）
+├── CLAUDE.md           # Claude配置文档
+├── .git/               # Git仓库
+├── .gitignore          # Git忽略文件
+└── .claude/            # Claude配置
 ```
 
 ## 技术栈

@@ -1,1 +1,26 @@
 /.claude
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*$py.class
+
+# Virtual environments
+venv/
+env/
+
+# Flask
+instance/
+*.db
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
