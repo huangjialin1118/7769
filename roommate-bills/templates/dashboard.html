@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}个人面板 - 室友记账系统{% endblock %}
+
+{% block content %}
+<h2>个人统计面板</h2>
+<p class="text-muted">欢迎，{{ current_user.display_name }}！</p>
+
+<!-- 第一行：财务状况 -->
+<div class="row mb-3">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 class="text-success">¥{{ "%.2f"|format(total_owe_me) }}</h4>
+                <p class="card-text">待收款总额</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 class="text-danger">¥{{ "%.2f"|format(total_i_owe) }}</h4>
+                <p class="card-text">待付款总额</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 class="text-primary">{{ settled_bills_count }}</h4>
+                <p class="card-text">已结清账单</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 第二行：账单统计 -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 class="text-info">{{ bills_count }}</h4>
+                <p class="card-text">我创建的账单</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card text-center">
+            <div class="card-body">
+                <h4 class="text-info">{{ participated_bills_count }}</h4>
+                <p class="card-text">参与账单</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">我的最近账单</h5>
+            </div>
+            <div class="card-body">
+                {% if recent_bills %}
+                    <div class="list-group list-group-flush">
+                        {% for bill in recent_bills %}
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">{{ bill.description }}</h6>
+                                    <small class="text-muted">{{ bill.date.strftime('%Y年%m月%d日') }}</small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-primary">¥{{ "%.2f"|format(bill.amount) }}</span>
+                                    {% if bill.is_settled %}
+                                        <span class="badge bg-success ms-1">已结算</span>
+                                    {% else %}
+                                        <span class="badge bg-warning ms-1">未结算</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center py-3">还没有账单记录</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 债务关系明细 -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">债务关系明细</h5>
+            </div>
+            <div class="card-body">
+                {% if debt_details.i_owe or debt_details.owe_me %}
+                    <!-- 我需要付给别人的 -->
+                    {% if debt_details.i_owe %}
+                        <div class="mb-4">
+                            <h6 class="text-danger mb-3">
+                                <i class="bi bi-exclamation-triangle"></i> 我需要付款：
+                            </h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>欠款人</th>
+                                            <th>金额</th>
+                                            <th>相关账单</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for debt in debt_details.i_owe %}
+                                            <tr>
+                                                <td>{{ debt.user }}</td>
+                                                <td>
+                                                    <span class="badge bg-danger">
+                                                        ¥{{ "%.2f"|format(debt.amount) }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <small class="text-muted">
+                                                        {{ debt.bills|join(', ') }}
+                                                    </small>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="table-danger">
+                                            <th>总计应付</th>
+                                            <th>
+                                                <strong class="text-danger">
+                                                    ¥{{ "%.2f"|format(debt_details.total_i_owe) }}
+                                                </strong>
+                                            </th>
+                                            <th></th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    <!-- 别人需要付给我的 -->
+                    {% if debt_details.owe_me %}
+                        <div class="mb-3">
+                            <h6 class="text-success mb-3">
+                                <i class="bi bi-check-circle"></i> 需要收款：
+                            </h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>付款人</th>
+                                            <th>金额</th>
+                                            <th>相关账单</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for debt in debt_details.owe_me %}
+                                            <tr>
+                                                <td>{{ debt.user }}</td>
+                                                <td>
+                                                    <span class="badge bg-success">
+                                                        ¥{{ "%.2f"|format(debt.amount) }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <small class="text-muted">
+                                                        {{ debt.bills|join(', ') }}
+                                                    </small>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="table-success">
+                                            <th>总计应收</th>
+                                            <th>
+                                                <strong class="text-success">
+                                                    ¥{{ "%.2f"|format(debt_details.total_owe_me) }}
+                                                </strong>
+                                            </th>
+                                            <th></th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                {% else %}
+                    <div class="text-center py-4">
+                        <h4 class="text-muted">✅</h4>
+                        <p class="text-muted mb-0">目前没有未结算的债务关系</p>
+                        <small class="text-muted">所有账单都已结清</small>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">快速操作</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('add_bill') }}" class="btn btn-primary">添加新账单</a>
+                    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">查看所有账单</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">账户信息</h6>
+            </div>
+            <div class="card-body">
+                <p><strong>用户名：</strong>{{ current_user.username }}</p>
+                <p><strong>显示名：</strong>{{ current_user.display_name }}</p>
+                <p><strong>注册时间：</strong>{{ current_user.created_at.strftime('%Y-%m-%d') }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

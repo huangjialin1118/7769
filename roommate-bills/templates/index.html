@@ -1,0 +1,1175 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2>所有账单</h2>
+            <a href="{{ url_for('add_bill') }}" class="btn btn-primary">添加新账单</a>
+        </div>
+
+        {% if bills %}
+            <div class="row">
+                {% for bill in bills %}
+                    <div class="col-md-6 mb-3">
+                        {% set progress = bill.get_settlement_progress() %}
+                        {% set settlement_status = bill.get_settlement_status() %}
+                        {% set non_payer_settled = progress.settled - 1 %}
+                        {% set non_payer_total = progress.total - 1 %}
+                        <div class="card {% if bill.is_settled %}border-success{% elif non_payer_settled > 0 %}border-warning{% else %}border-warning{% endif %}" id="bill-{{ bill.id }}-card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h5 class="card-title">{{ bill.description }}</h5>
+                                        <p class="card-text">
+                                            <strong>金额：</strong>¥{{ "%.2f"|format(bill.amount) }}<br>
+                                            <strong>付款人：</strong>{{ bill.payer.display_name }}<br>
+                                            <strong>账单日期：</strong>{{ bill.date.strftime('%Y年%m月%d日') }}<br>
+                                            <strong>每人应付：</strong>¥{{ "%.2f"|format(bill.get_split_amount()) }}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        {% if bill.is_settled %}
+                                            <span id="bill-{{ bill.id }}-status" class="badge bg-success">全部结算</span>
+                                        {% elif non_payer_settled > 0 and non_payer_settled < non_payer_total %}
+                                            <span id="bill-{{ bill.id }}-status" class="badge bg-warning">部分结算</span>
+                                        {% elif non_payer_settled == non_payer_total and non_payer_total > 0 %}
+                                            <span id="bill-{{ bill.id }}-status" class="badge bg-success">全部结算</span>
+                                        {% else %}
+                                            <span id="bill-{{ bill.id }}-status" class="badge bg-danger">未结算</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <!-- 结算进度条 -->
+                                <div class="mt-2">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <small class="text-muted">结算进度</small>
+                                        <small class="text-muted" id="bill-{{ bill.id }}-progress-text">{{ progress.settled }}/{{ progress.total }}人</small>
+                                    </div>
+                                    <div class="progress" style="height: 4px;">
+                                        <div class="progress-bar bg-success" role="progressbar"
+                                             id="bill-{{ bill.id }}-progress-bar"
+                                             style="width: {{ progress.percentage }}%"></div>
+                                    </div>
+                                </div>
+
+                                <!-- 参与者结算状态 -->
+                                <div class="mt-3">
+                                    <h6 class="small mb-2">参与者状态：</h6>
+                                    <div class="row">
+                                        {% for user_id, status in settlement_status.items() %}
+                                            <div class="col-md-6 mb-2">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div class="d-flex align-items-center">
+                                                        <span id="bill-{{ bill.id }}-user-{{ user_id }}-icon">
+                                                            {% if status.is_settled %}
+                                                                <i class="bi bi-check-circle-fill text-success me-1"></i>
+                                                            {% else %}
+                                                                <i class="bi bi-clock text-warning me-1"></i>
+                                                            {% endif %}
+                                                        </span>
+                                                        <small>
+                                                            {{ status.user.display_name }}
+                                                            {% if status.is_payer %}(付款人){% endif %}
+                                                        </small>
+                                                    </div>
+                                                    <div class="d-flex align-items-center">
+                                                        {% if status.is_payer %}
+                                                            <small class="text-muted">-</small>
+                                                        {% else %}
+                                                            <span id="bill-{{ bill.id }}-user-{{ user_id }}-amount">
+                                                                {% if status.is_settled %}
+                                                                    <small class="text-success">¥{{ "%.2f"|format(status.expected_amount) }}</small>
+                                                                {% else %}
+                                                                    <small class="text-danger">¥{{ "%.2f"|format(status.expected_amount) }}</small>
+                                                                {% endif %}
+                                                            </span>
+                                                            {% if bill.payer_id == current_user.id %}
+                                                                <button id="bill-{{ bill.id }}-user-{{ user_id }}-btn"
+                                                                        class="btn btn-sm {% if status.is_settled %}btn-outline-warning{% else %}btn-outline-success{% endif %} px-1 py-0 ms-1"
+                                                                        style="font-size: {% if status.is_settled %}0.6rem{% else %}0.7rem{% endif %};"
+                                                                        onclick="return settleIndividual({{ bill.id }}, {{ user_id }}, '{{ status.user.display_name }}')">
+                                                                    {% if status.is_settled %}撤销{% else %}✓{% endif %}
+                                                                </button>
+                                                            {% endif %}
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+
+                                <!-- 整体操作按钮 -->
+                                <div class="mt-3 pt-2 border-top">
+                                    <!-- 查看凭证按钮 -->
+                                    {% if bill.receipt_filename %}
+                                        <button type="button" class="btn btn-sm btn-info me-1"
+                                                onclick="viewReceipt({{ bill.id }})">
+                                            <i class="bi bi-file-earmark-text"></i> 查看凭证
+                                        </button>
+                                    {% endif %}
+
+                                    {% if bill.payer_id == current_user.id %}
+                                        {% if not bill.is_settled %}
+                                            <button id="bill-{{ bill.id }}-toggle-btn"
+                                                    class="btn btn-sm btn-success me-1"
+                                                    onclick="return toggleBillSettlement({{ bill.id }}, false)">
+                                                全部结算
+                                            </button>
+                                        {% else %}
+                                            <button id="bill-{{ bill.id }}-toggle-btn"
+                                                    class="btn btn-sm btn-outline-warning me-1"
+                                                    onclick="return toggleBillSettlement({{ bill.id }}, true)">
+                                                全部撤销
+                                            </button>
+                                        {% endif %}
+                                    {% else %}
+                                        <div class="alert alert-info py-2 mb-0 alert-dismissible fade show">
+                                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
+                                            <small class="text-muted">
+                                                <i class="bi bi-info-circle me-1"></i>
+                                                只有账单创建者（{{ bill.payer.display_name }}）可以管理结算状态
+                                            </small>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <h4 class="text-muted">还没有账单记录</h4>
+                <p class="text-muted">点击上方按钮添加第一笔账单吧！</p>
+                <a href="{{ url_for('add_bill') }}" class="btn btn-primary">添加账单</a>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">我的债务关系</h5>
+            </div>
+            <div class="card-body" id="debt-details-container">
+                <!-- 我需要付给别人的钱 -->
+                {% if debt_details.i_owe %}
+                    <div class="mb-3">
+                        <h6 class="text-danger mb-2">
+                            <i class="bi bi-arrow-up-circle"></i> 我需要付给：
+                        </h6>
+                        {% for debt in debt_details.i_owe %}
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="small">{{ debt.user }}</span>
+                                <span class="badge bg-danger">¥{{ "%.2f"|format(debt.amount) }}</span>
+                            </div>
+                            <div class="small text-muted mb-2">
+                                {{ debt.bills|join(', ') }}
+                            </div>
+                        {% endfor %}
+                        <hr class="my-2">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-danger">总计应付：</strong>
+                            <strong class="text-danger">¥{{ "%.2f"|format(debt_details.total_i_owe) }}</strong>
+                        </div>
+                    </div>
+                {% endif %}
+
+                <!-- 别人需要付给我的钱 -->
+                {% if debt_details.owe_me %}
+                    <div class="mb-3">
+                        <h6 class="text-success mb-2">
+                            <i class="bi bi-arrow-down-circle"></i> 需要付给我：
+                        </h6>
+                        {% for debt in debt_details.owe_me %}
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="small">{{ debt.user }}</span>
+                                <span class="badge bg-success">¥{{ "%.2f"|format(debt.amount) }}</span>
+                            </div>
+                            <div class="small text-muted mb-2">
+                                {{ debt.bills|join(', ') }}
+                            </div>
+                        {% endfor %}
+                        <hr class="my-2">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-success">总计应收：</strong>
+                            <strong class="text-success">¥{{ "%.2f"|format(debt_details.total_owe_me) }}</strong>
+                        </div>
+                    </div>
+                {% endif %}
+
+
+                <!-- 空状态 -->
+                {% if not debt_details.i_owe and not debt_details.owe_me %}
+                    <div class="text-center py-3">
+                        <h4 class="text-muted">✅</h4>
+                        <p class="text-muted mb-0">目前没有未结算的债务</p>
+                        <small class="text-muted">所有账单都已结清</small>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">快速统计</h6>
+            </div>
+            <div class="card-body">
+                {% set unsettled_bills = bills|selectattr("is_settled", "equalto", false)|list %}
+                {% set settled_bills = bills|selectattr("is_settled", "equalto", true)|list %}
+
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border-end">
+                            <h4 class="text-warning" id="stats-unsettled">{{ unsettled_bills|length }}</h4>
+                            <small class="text-muted">未结算</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <h4 class="text-success" id="stats-settled">{{ settled_bills|length }}</h4>
+                        <small class="text-muted">已结算</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 凭证查看模态框 -->
+<div class="modal fade" id="receiptModal" tabindex="-1" aria-labelledby="receiptModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="receiptModalLabel">
+                    <i class="bi bi-file-earmark-text"></i> 账单凭证
+                </h5>
+                <div class="ms-auto d-flex align-items-center">
+                    <button type="button" class="btn btn-sm btn-light me-2" onclick="toggleFullscreen()">
+                        <i class="bi bi-arrows-fullscreen" id="fullscreenIcon"></i>
+                    </button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <!-- 账单信息区域 -->
+                <div id="receiptInfo" class="mb-3">
+                    <!-- 动态填充 -->
+                </div>
+
+                <!-- 多文件标签页（当有多个文件时显示） -->
+                <ul class="nav nav-tabs mb-3" id="receiptTabs" style="display:none;">
+                    <!-- 动态填充标签 -->
+                </ul>
+
+                <!-- 凭证显示区域 -->
+                <div id="receiptContent" class="receipt-container tab-content">
+                    <!-- 动态填充凭证内容 -->
+                </div>
+
+                <!-- 加载动画 -->
+                <div id="receiptLoading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                    <p class="mt-2 text-muted">正在加载凭证...</p>
+                </div>
+
+                <!-- 错误信息 -->
+                <div id="receiptError" class="alert alert-danger" style="display: none;">
+                    <i class="bi bi-exclamation-triangle"></i> <span id="errorMessage"></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <div id="downloadButtons" class="d-inline-block">
+                    <!-- 动态生成下载按钮 -->
+                </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.receipt-container {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.receipt-container img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.receipt-container embed,
+.receipt-container iframe {
+    width: 100%;
+    min-height: 500px;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+}
+
+#receiptInfo {
+    background: #f0f7ff;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 4px solid #0d6efd;
+}
+
+/* 模态框优化 */
+.modal-xl .modal-body {
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+@media (min-width: 1200px) {
+    .modal-xl {
+        max-width: 90%;
+    }
+}
+
+/* 全屏按钮样式 */
+.btn-light {
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    transition: all 0.3s;
+}
+
+.btn-light:hover {
+    background-color: white;
+    transform: scale(1.1);
+}
+
+/* 全屏模式下的优化 */
+.modal-fullscreen .modal-body {
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+}
+
+.modal-fullscreen .receipt-container {
+    max-height: calc(100vh - 200px);
+}
+</style>
+
+<script>
+// 定义全局的查看凭证函数
+function viewReceipt(billId) {
+    console.log('查看凭证：账单ID=' + billId);
+
+    try {
+        // 获取或创建模态框实例（避免重复创建）
+        const modalElement = document.getElementById('receiptModal');
+        if (!modalElement) {
+            console.error('模态框元素不存在');
+            alert('页面加载错误，请刷新页面重试');
+            return;
+        }
+
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+
+        // 检查并重置显示状态
+        const loadingElement = document.getElementById('receiptLoading');
+        const contentElement = document.getElementById('receiptContent');
+        const errorElement = document.getElementById('receiptError');
+        const infoElement = document.getElementById('receiptInfo');
+
+        if (!loadingElement || !contentElement || !errorElement || !infoElement) {
+            console.error('模态框内部元素缺失', {
+                loading: !!loadingElement,
+                content: !!contentElement,
+                error: !!errorElement,
+                info: !!infoElement
+            });
+            alert('页面元素加载不完整，请刷新页面重试');
+            return;
+        }
+
+        // 重置显示状态
+        loadingElement.style.display = 'block';
+        contentElement.style.display = 'none';
+        errorElement.style.display = 'none';
+        infoElement.innerHTML = '';
+        contentElement.innerHTML = '';
+
+        // 显示模态框
+        modal.show();
+
+        // 发送AJAX请求获取凭证信息
+        fetch(`/api/receipt/${billId}`, {
+            method: 'GET',
+            credentials: 'same-origin',  // 包含cookie
+            headers: {
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache'
+            }
+        })
+        .then(response => {
+            console.log('API响应状态：', response.status);
+
+            // 处理重定向（未登录）
+            if (response.status === 302 || response.redirected) {
+                throw new Error('登录状态已过期，请重新登录');
+            }
+
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.error || `请求失败：${response.status}`);
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('获取凭证数据成功：', data);
+
+            // 隐藏加载动画
+            if (loadingElement) loadingElement.style.display = 'none';
+            if (contentElement) contentElement.style.display = 'block';
+
+            // 显示账单信息
+            if (infoElement) {
+                infoElement.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>账单描述：</strong>${data.description}
+                    </div>
+                    <div class="col-md-3">
+                        <strong>金额：</strong>¥${data.amount.toFixed(2)}
+                    </div>
+                    <div class="col-md-3">
+                        <strong>日期：</strong>${data.date}
+                    </div>
+                </div>
+            `;
+            }
+
+            // 处理多文件显示
+            const receipts = data.receipts || [];
+            const tabsElement = document.getElementById('receiptTabs');
+            const downloadButtonsContainer = document.getElementById('downloadButtons');
+
+            // 如果没有新格式的receipts但有旧格式数据，构建兼容数组
+            if (receipts.length === 0 && data.filepath) {
+                receipts.push({
+                    filename: data.filename,
+                    filepath: data.filepath,
+                    file_type: data.receipt_type
+                });
+            }
+
+            // 清空之前的内容
+            tabsElement.innerHTML = '';
+            contentElement.innerHTML = '';
+            downloadButtonsContainer.innerHTML = '';
+
+            if (receipts.length === 0) {
+                contentElement.innerHTML = '<div class="alert alert-warning">该账单没有上传凭证</div>';
+                return;
+            }
+
+            // 如果只有一个文件，直接显示，不需要标签页
+            if (receipts.length === 1) {
+                tabsElement.style.display = 'none';
+                const receipt = receipts[0];
+                const staticUrl = `/${receipt.filepath}`;
+
+                if (receipt.file_type === 'image') {
+                    contentElement.innerHTML = `
+                        <div class="text-center">
+                            <img src="${staticUrl}" alt="账单凭证" class="img-fluid"
+                                 onerror="this.onerror=null; this.src='/static/img/no-image.png'; this.alt='凭证加载失败'">
+                        </div>
+                    `;
+                } else if (receipt.file_type === 'pdf') {
+                    contentElement.innerHTML = `
+                        <embed src="${staticUrl}" type="application/pdf" width="100%" style="height: 70vh; min-height: 600px;">
+                        <div class="mt-3 text-center text-muted">
+                            <small>如果PDF无法显示，请点击下方下载按钮查看</small>
+                        </div>
+                    `;
+                }
+
+                // 添加下载按钮
+                downloadButtonsContainer.innerHTML = `
+                    <a href="${staticUrl}" class="btn btn-primary" download="${receipt.filename}">
+                        <i class="bi bi-download"></i> 下载凭证
+                    </a>
+                    <a href="${staticUrl}" class="btn btn-info" target="_blank">
+                        <i class="bi bi-box-arrow-up-right"></i> 新窗口打开
+                    </a>
+                `;
+            } else {
+                // 多个文件，显示标签页
+                tabsElement.style.display = 'flex';
+
+                receipts.forEach((receipt, index) => {
+                    const isActive = index === 0;
+                    const icon = receipt.file_type === 'pdf' ? '📄' : '🖼️';
+
+                    // 创建标签
+                    const tabItem = document.createElement('li');
+                    tabItem.className = 'nav-item';
+                    tabItem.innerHTML = `
+                        <button class="nav-link ${isActive ? 'active' : ''}"
+                                id="receipt-tab-${index}"
+                                data-bs-toggle="tab"
+                                data-bs-target="#receipt-pane-${index}"
+                                type="button">
+                            ${icon} ${receipt.filename}
+                        </button>
+                    `;
+                    tabsElement.appendChild(tabItem);
+
+                    // 创建内容面板
+                    const paneDiv = document.createElement('div');
+                    paneDiv.className = `tab-pane fade ${isActive ? 'show active' : ''}`;
+                    paneDiv.id = `receipt-pane-${index}`;
+
+                    const staticUrl = `/${receipt.filepath}`;
+
+                    if (receipt.file_type === 'image') {
+                        paneDiv.innerHTML = `
+                            <div class="text-center">
+                                <img src="${staticUrl}" alt="${receipt.filename}" class="img-fluid"
+                                     onerror="this.onerror=null; this.src='/static/img/no-image.png'; this.alt='凭证加载失败'">
+                            </div>
+                        `;
+                    } else if (receipt.file_type === 'pdf') {
+                        paneDiv.innerHTML = `
+                            <embed src="${staticUrl}" type="application/pdf" width="100%" style="height: 70vh; min-height: 600px;">
+                            <div class="mt-3 text-center text-muted">
+                                <small>如果PDF无法显示，请点击下方下载按钮查看</small>
+                            </div>
+                        `;
+                    }
+
+                    contentElement.appendChild(paneDiv);
+                });
+
+                // 添加批量下载按钮和单独查看选项
+                let buttonsHtml = '';
+                if (receipts.length > 1) {
+                    buttonsHtml += `
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+                                <i class="bi bi-download"></i> 下载凭证
+                            </button>
+                            <ul class="dropdown-menu">
+                    `;
+
+                    receipts.forEach((receipt, index) => {
+                        const staticUrl = `/${receipt.filepath}`;
+                        const icon = receipt.file_type === 'pdf' ? '📄' : '🖼️';
+                        buttonsHtml += `
+                            <li>
+                                <a class="dropdown-item" href="${staticUrl}" download="${receipt.filename}">
+                                    ${icon} ${receipt.filename}
+                                </a>
+                            </li>
+                        `;
+                    });
+
+                    buttonsHtml += `
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    const staticUrl = `/${receipts[0].filepath}`;
+                    buttonsHtml = `
+                        <a href="${staticUrl}" class="btn btn-primary" download="${receipts[0].filename}">
+                            <i class="bi bi-download"></i> 下载凭证
+                        </a>
+                    `;
+                }
+
+                downloadButtonsContainer.innerHTML = buttonsHtml;
+            }
+
+            // 更新模态框标题
+            const fileCount = receipts.length > 1 ? ` (${receipts.length}个文件)` : '';
+            document.getElementById('receiptModalLabel').innerHTML = `
+                <i class="bi bi-file-earmark-text"></i> 账单凭证 - ${data.description}${fileCount}
+            `;
+        })
+        .catch(error => {
+            console.error('加载凭证错误：', error);
+
+            // 隐藏加载动画，显示错误信息
+            if (loadingElement) loadingElement.style.display = 'none';
+            if (errorElement) {
+                errorElement.style.display = 'block';
+                const errorMessage = document.getElementById('errorMessage');
+                if (errorMessage) {
+                    errorMessage.textContent = error.message || '加载凭证时发生错误，请稍后重试';
+                }
+            }
+
+            // 如果是登录过期，3秒后刷新页面
+            if (error.message && error.message.includes('登录')) {
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            }
+        });
+
+    } catch (error) {
+        console.error('viewReceipt函数执行错误：', error);
+        alert('操作失败：' + error.message);
+    }
+}
+
+// 全屏切换功能
+function toggleFullscreen() {
+    const modalDialog = document.querySelector('#receiptModal .modal-dialog');
+    const fullscreenIcon = document.getElementById('fullscreenIcon');
+
+    if (modalDialog.classList.contains('modal-fullscreen')) {
+        // 退出全屏
+        modalDialog.classList.remove('modal-fullscreen');
+        modalDialog.classList.add('modal-xl');
+        fullscreenIcon.classList.remove('bi-arrows-angle-contract');
+        fullscreenIcon.classList.add('bi-arrows-fullscreen');
+    } else {
+        // 进入全屏
+        modalDialog.classList.remove('modal-xl');
+        modalDialog.classList.add('modal-fullscreen');
+        fullscreenIcon.classList.remove('bi-arrows-fullscreen');
+        fullscreenIcon.classList.add('bi-arrows-angle-contract');
+    }
+}
+
+// 检查账单是否全部结算
+function checkAllSettled(billId) {
+    // 获取所有非付款人的按钮
+    const buttons = document.querySelectorAll(`button[id^="bill-${billId}-user-"][id$="-btn"]`);
+    let allSettled = true;
+
+    buttons.forEach(btn => {
+        if (btn.classList.contains('btn-outline-success')) {
+            allSettled = false;
+        }
+    });
+
+    return allSettled;
+}
+
+// 单人结算功能（AJAX版本）
+function settleIndividual(billId, userId, userName) {
+    // 获取按钮元素以判断当前状态
+    const btn = event.target.closest('button');
+    const isCancel = btn.classList.contains('btn-outline-warning');
+
+    const action = isCancel ? '撤销结算' : '确认付款';
+    const confirmMsg = isCancel ?
+        `确认撤销${userName}的结算？` :
+        `确认${userName}已付款？`;
+
+    if (!confirm(confirmMsg)) {
+        return false;
+    }
+
+    // 显示加载状态
+    btn.disabled = true;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch(`/settle_individual/${billId}/${userId}`, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 显示成功消息
+            showToast(data.message, 'success');
+
+            // 更新UI
+            updateSettlementUI(billId, userId, data.user_settled, data.settled_date);
+
+            // 更新进度条
+            updateProgressBar(billId);
+
+            // 延迟一下让DOM更新完成，然后更新状态
+            setTimeout(function() {
+                // 重新计算状态，只统计有按钮的参与者（排除付款人）
+                const allButtons = document.querySelectorAll(`[id^="bill-${billId}-user-"][id$="-btn"]`);
+                let settledCount = 0;
+                let totalCount = 0;
+
+                allButtons.forEach(function(buttonElement) {
+                    totalCount++;
+                    // 获取对应的图标元素
+                    const userId = buttonElement.id.match(/user-(\d+)-btn/)[1];
+                    const iconElement = document.querySelector(`#bill-${billId}-user-${userId}-icon`);
+                    if (iconElement && iconElement.querySelector('.bi-check-circle-fill.text-success')) {
+                        settledCount++;
+                    }
+                });
+
+                // 判断状态
+                const isFullySettled = totalCount > 0 && settledCount === totalCount;
+                const isPartiallySettled = settledCount > 0 && settledCount < totalCount;
+
+                // 更新各种UI元素
+                updateBillStatusDirect(billId, isFullySettled, isPartiallySettled);
+                updateBillCardBorder(billId, isFullySettled);
+                updateSettlementButton(billId, isFullySettled);
+                // 更新快速统计和债务关系
+                updateQuickStats();
+                updateDebtDetails();
+            }, 50);
+        } else {
+            showToast(data.message || '操作失败', 'danger');
+            // 恢复按钮
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    })
+    .catch(error => {
+        console.error('结算操作失败：', error);
+        showToast('操作失败，请稍后重试', 'danger');
+        // 恢复按钮
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    });
+
+    return false; // 防止默认行为
+}
+
+// 整体结算切换功能（AJAX版本）
+function toggleBillSettlement(billId, isCurrentlySettled) {
+    const action = isCurrentlySettled ? '标记为未结算' : '标记为已结算';
+    const confirmMsg = isCurrentlySettled ?
+        '确认全部标记为未结算？' :
+        '确认全部标记为已结算？';
+
+    if (!confirm(confirmMsg)) {
+        return false;
+    }
+
+    // 获取按钮元素
+    const btn = event.target.closest('button');
+    btn.disabled = true;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 处理中...';
+
+    fetch(`/toggle_settlement/${billId}`, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 显示成功消息
+            showToast(data.message, 'success');
+
+            // 更新所有参与者的结算状态
+            if (data.settlement_status) {
+                for (const [userId, status] of Object.entries(data.settlement_status)) {
+                    updateSettlementUI(billId, parseInt(userId), status.is_settled, status.settled_date);
+                }
+            }
+
+            // 更新进度条
+            updateProgressBar(billId);
+
+            // 延迟一下让DOM更新完成，然后更新状态
+            setTimeout(function() {
+                // 重新计算状态，只统计有按钮的参与者（排除付款人）
+                const allButtons = document.querySelectorAll(`[id^="bill-${billId}-user-"][id$="-btn"]`);
+                let settledCount = 0;
+                let totalCount = 0;
+
+                allButtons.forEach(function(buttonElement) {
+                    totalCount++;
+                    // 获取对应的图标元素
+                    const userId = buttonElement.id.match(/user-(\d+)-btn/)[1];
+                    const iconElement = document.querySelector(`#bill-${billId}-user-${userId}-icon`);
+                    if (iconElement && iconElement.querySelector('.bi-check-circle-fill.text-success')) {
+                        settledCount++;
+                    }
+                });
+
+                // 判断状态
+                const isFullySettled = totalCount > 0 && settledCount === totalCount;
+                const isPartiallySettled = settledCount > 0 && settledCount < totalCount;
+
+                // 更新各种UI元素
+                updateBillStatusDirect(billId, isFullySettled, isPartiallySettled);
+                updateBillCardBorder(billId, isFullySettled);
+                updateSettlementButton(billId, isFullySettled);
+                // 更新快速统计和债务关系
+                updateQuickStats();
+                updateDebtDetails();
+            }, 50);
+        } else {
+            showToast(data.message || '操作失败', 'danger');
+            // 恢复按钮
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    })
+    .catch(error => {
+        console.error('结算操作失败：', error);
+        showToast('操作失败，请稍后重试', 'danger');
+        // 恢复按钮
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    });
+
+    return false;
+}
+
+// 更新单个用户的结算UI
+function updateSettlementUI(billId, userId, isSettled, settledDate) {
+    // 更新图标
+    const iconElement = document.querySelector(`#bill-${billId}-user-${userId}-icon`);
+    if (iconElement) {
+        if (isSettled) {
+            iconElement.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>';
+        } else {
+            iconElement.innerHTML = '<i class="bi bi-clock text-warning me-1"></i>';
+        }
+    }
+
+    // 更新金额显示
+    const amountElement = document.querySelector(`#bill-${billId}-user-${userId}-amount`);
+    if (amountElement) {
+        const amountValue = amountElement.querySelector('small')?.textContent || '';
+        if (isSettled) {
+            amountElement.innerHTML = `<small class="text-success">${amountValue}</small>`;
+        } else {
+            amountElement.innerHTML = `<small class="text-danger">${amountValue}</small>`;
+        }
+    }
+
+    // 更新按钮
+    const btnElement = document.querySelector(`#bill-${billId}-user-${userId}-btn`);
+    if (btnElement) {
+        btnElement.disabled = false;  // 重新启用按钮，确保可以继续点击
+        if (isSettled) {
+            btnElement.className = 'btn btn-sm btn-outline-warning px-1 py-0 ms-1';
+            btnElement.style.fontSize = '0.6rem';
+            btnElement.innerHTML = '撤销';
+        } else {
+            btnElement.className = 'btn btn-sm btn-outline-success px-1 py-0 ms-1';
+            btnElement.style.fontSize = '0.7rem';
+            btnElement.innerHTML = '✓';
+        }
+    }
+}
+
+// 直接更新账单状态（新版本）
+function updateBillStatusDirect(billId, isFullySettled, isPartiallySettled) {
+    const statusBadge = document.querySelector(`#bill-${billId}-status`);
+    if (!statusBadge) return;
+
+    if (isFullySettled) {
+        // 全部结算
+        statusBadge.className = 'badge bg-success';
+        statusBadge.textContent = '全部结算';
+    } else if (isPartiallySettled) {
+        // 部分结算
+        statusBadge.className = 'badge bg-warning';
+        statusBadge.textContent = '部分结算';
+    } else {
+        // 未结算
+        statusBadge.className = 'badge bg-danger';
+        statusBadge.textContent = '未结算';
+    }
+}
+
+// 更新账单整体状态
+function updateBillStatus(billId, isSettled) {
+    const statusBadge = document.querySelector(`#bill-${billId}-status`);
+    if (!statusBadge) return;
+
+    // 如果传入布尔值（兼容旧代码），计算实际状态
+    if (typeof isSettled === 'boolean') {
+        // 计算已结算人数来确定具体状态，只统计有按钮的参与者（排除付款人）
+        const allButtons = document.querySelectorAll(`[id^="bill-${billId}-user-"][id$="-btn"]`);
+        let settledCount = 0;
+        let totalCount = 0;
+
+        allButtons.forEach(function(buttonElement) {
+            totalCount++;
+            // 获取对应的图标元素
+            const userId = buttonElement.id.match(/user-(\d+)-btn/)[1];
+            const iconElement = document.querySelector(`#bill-${billId}-user-${userId}-icon`);
+            if (iconElement && iconElement.querySelector('.bi-check-circle-fill.text-success')) {
+                settledCount++;
+            }
+        });
+
+        // 根据结算情况判断状态
+        if (isSettled && totalCount > 0) {
+            // 明确指定为已结算
+            statusBadge.className = 'badge bg-success';
+            statusBadge.textContent = '全部结算';
+        } else if (totalCount > 0 && settledCount === totalCount) {
+            // 全部结算（所有人都已结算）
+            statusBadge.className = 'badge bg-success';
+            statusBadge.textContent = '全部结算';
+        } else if (settledCount > 0 && settledCount < totalCount) {
+            // 部分结算
+            statusBadge.className = 'badge bg-warning';
+            statusBadge.textContent = '部分结算';
+        } else {
+            // 未结算（没有人结算或没有找到参与者）
+            statusBadge.className = 'badge bg-danger';
+            statusBadge.textContent = '未结算';
+        }
+    }
+}
+
+// 更新账单卡片边框颜色
+function updateBillCardBorder(billId, isSettled) {
+    const card = document.querySelector(`#bill-${billId}-card`);
+    if (!card) return;
+
+    // 移除所有边框类
+    card.classList.remove('border-warning', 'border-success', 'border-danger');
+
+    // 如果传入布尔值，计算实际状态
+    if (typeof isSettled === 'boolean') {
+        // 计算已结算人数来确定具体状态，只统计有按钮的参与者（排除付款人）
+        const allButtons = document.querySelectorAll(`[id^="bill-${billId}-user-"][id$="-btn"]`);
+        let settledCount = 0;
+        let totalCount = 0;
+
+        allButtons.forEach(function(buttonElement) {
+            totalCount++;
+            // 获取对应的图标元素
+            const userId = buttonElement.id.match(/user-(\d+)-btn/)[1];
+            const iconElement = document.querySelector(`#bill-${billId}-user-${userId}-icon`);
+            if (iconElement && iconElement.querySelector('.bi-check-circle-fill.text-success')) {
+                settledCount++;
+            }
+        });
+
+        // 根据结算情况设置边框颜色
+        if (isSettled && totalCount > 0) {
+            // 明确指定为已结算 - 绿色边框
+            card.classList.add('border-success');
+        } else if (totalCount > 0 && settledCount === totalCount) {
+            // 全部结算 - 绿色边框
+            card.classList.add('border-success');
+        } else {
+            // 部分结算或未结算 - 黄色边框
+            card.classList.add('border-warning');
+        }
+    }
+}
+
+// 更新进度条
+function updateProgressBar(billId) {
+    // 计算已结算人数，只统计有按钮的参与者（排除付款人）
+    const allButtons = document.querySelectorAll(`[id^="bill-${billId}-user-"][id$="-btn"]`);
+    let settledCount = 0;
+    let totalCount = 0;
+
+    // 付款人始终算作已结算
+    let payerSettled = 1;
+
+    allButtons.forEach(function(buttonElement) {
+        totalCount++;
+        // 获取对应的图标元素
+        const userId = buttonElement.id.match(/user-(\d+)-btn/)[1];
+        const iconElement = document.querySelector(`#bill-${billId}-user-${userId}-icon`);
+        if (iconElement && iconElement.querySelector('.bi-check-circle-fill.text-success')) {
+            settledCount++;
+        }
+    });
+
+    // 总人数包括付款人，已结算人数包括付款人和已结算的参与者
+    const totalWithPayer = totalCount + 1;
+    const settledWithPayer = settledCount + payerSettled;
+
+    // 计算百分比（包括付款人）
+    const percentage = totalWithPayer > 0 ? (settledWithPayer / totalWithPayer * 100) : 0;
+
+    // 更新进度文本
+    const progressText = document.querySelector(`#bill-${billId}-progress-text`);
+    if (progressText) {
+        progressText.textContent = `${settledWithPayer}/${totalWithPayer}人`;
+    }
+
+    // 更新进度条
+    const progressBar = document.querySelector(`#bill-${billId}-progress-bar`);
+    if (progressBar) {
+        progressBar.style.width = `${percentage}%`;
+    }
+}
+
+// 更新快速统计
+function updateQuickStats() {
+    // 计算已结算和未结算的账单数量
+    const allCards = document.querySelectorAll('[id$="-card"]');
+    let settledCount = 0;
+    let unsettledCount = 0;
+
+    allCards.forEach(function(card) {
+        if (card.classList.contains('border-success')) {
+            settledCount++;
+        } else if (card.classList.contains('border-warning')) {
+            unsettledCount++;
+        }
+    });
+
+    // 更新显示
+    const unsettledEl = document.getElementById('stats-unsettled');
+    const settledEl = document.getElementById('stats-settled');
+
+    if (unsettledEl) {
+        unsettledEl.textContent = unsettledCount;
+    }
+    if (settledEl) {
+        settledEl.textContent = settledCount;
+    }
+}
+
+// 更新债务关系
+function updateDebtDetails() {
+    fetch('/api/debt_details', {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        const container = document.getElementById('debt-details-container');
+        if (!container) return;
+
+        let html = '';
+
+        // 我需要付给别人的钱
+        if (data.i_owe && data.i_owe.length > 0) {
+            html += `
+                <div class="mb-3">
+                    <h6 class="text-danger mb-2">
+                        <i class="bi bi-arrow-up-circle"></i> 我需要付给：
+                    </h6>`;
+
+            data.i_owe.forEach(function(debt) {
+                html += `
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small">${debt.user}</span>
+                        <span class="badge bg-danger">¥${debt.amount.toFixed(2)}</span>
+                    </div>
+                    <div class="small text-muted mb-2">
+                        ${debt.bills.join(', ')}
+                    </div>`;
+            });
+
+            html += `
+                    <hr class="my-2">
+                    <div class="d-flex justify-content-between">
+                        <strong class="text-danger">总计应付：</strong>
+                        <strong class="text-danger">¥${data.total_i_owe.toFixed(2)}</strong>
+                    </div>
+                </div>`;
+        }
+
+        // 别人需要付给我的钱
+        if (data.owe_me && data.owe_me.length > 0) {
+            html += `
+                <div class="mb-3">
+                    <h6 class="text-success mb-2">
+                        <i class="bi bi-arrow-down-circle"></i> 需要付给我：
+                    </h6>`;
+
+            data.owe_me.forEach(function(debt) {
+                html += `
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small">${debt.user}</span>
+                        <span class="badge bg-success">¥${debt.amount.toFixed(2)}</span>
+                    </div>
+                    <div class="small text-muted mb-2">
+                        ${debt.bills.join(', ')}
+                    </div>`;
+            });
+
+            html += `
+                    <hr class="my-2">
+                    <div class="d-flex justify-content-between">
+                        <strong class="text-success">总计应收：</strong>
+                        <strong class="text-success">¥${data.total_owe_me.toFixed(2)}</strong>
+                    </div>
+                </div>`;
+        }
+
+        // 空状态
+        if ((!data.i_owe || data.i_owe.length === 0) && (!data.owe_me || data.owe_me.length === 0)) {
+            html = `
+                <div class="text-center py-3">
+                    <h4 class="text-muted">✅</h4>
+                    <p class="text-muted mb-0">目前没有未结算的债务</p>
+                    <small class="text-muted">所有账单都已结清</small>
+                </div>`;
+        }
+
+        container.innerHTML = html;
+    })
+    .catch(error => {
+        console.error('更新债务关系失败：', error);
+    });
+}
+
+// 更新整体结算按钮
+function updateSettlementButton(billId, isSettled) {
+    const btnElement = document.querySelector(`#bill-${billId}-toggle-btn`);
+    if (!btnElement) return;
+
+    if (isSettled) {
+        btnElement.className = 'btn btn-sm btn-outline-warning me-1';
+        btnElement.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> 全部撤销';
+        btnElement.setAttribute('onclick', `return toggleBillSettlement(${billId}, true)`);
+    } else {
+        btnElement.className = 'btn btn-sm btn-success me-1';
+        btnElement.innerHTML = '<i class="bi bi-check-all"></i> 全部结算';
+        btnElement.setAttribute('onclick', `return toggleBillSettlement(${billId}, false)`);
+    }
+    btnElement.disabled = false;
+}
+
+// 页面加载完成后，绑定模态框关闭事件清理
+document.addEventListener('DOMContentLoaded', function() {
+    const modalElement = document.getElementById('receiptModal');
+    if (modalElement) {
+        modalElement.addEventListener('hidden.bs.modal', function() {
+            console.log('模态框已关闭，清理内容');
+            // 清理模态框内容
+            document.getElementById('receiptInfo').innerHTML = '';
+            document.getElementById('receiptContent').innerHTML = '';
+            document.getElementById('receiptError').style.display = 'none';
+
+            // 重置为非全屏状态
+            const modalDialog = document.querySelector('#receiptModal .modal-dialog');
+            if (modalDialog.classList.contains('modal-fullscreen')) {
+                modalDialog.classList.remove('modal-fullscreen');
+                modalDialog.classList.add('modal-xl');
+                document.getElementById('fullscreenIcon').classList.remove('bi-arrows-angle-contract');
+                document.getElementById('fullscreenIcon').classList.add('bi-arrows-fullscreen');
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
