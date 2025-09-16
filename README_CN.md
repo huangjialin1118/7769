@@ -40,7 +40,7 @@
 1. **克隆仓库**
    ```bash
    git clone <repository-url>
-   cd roommate-bills
+   cd 7769
    ```
 
 2. **创建虚拟环境**
@@ -90,7 +90,7 @@
 ## 📁 项目结构
 
 ```
-roommate-bills/
+7769/
 ├── app.py                 # Flask 主应用文件
 ├── models.py              # 数据库模型
 ├── templates/             # HTML 模板
@@ -231,13 +231,13 @@ chmod 755 static/uploads/receipts
 
 1. **传输文件**
    ```bash
-   scp -r roommate-bills/ pi@树莓派IP:/home/pi/
+   scp -r 7769/ pi@树莓派IP:/home/pi/
    ```
 
 2. **安装依赖**
    ```bash
    ssh pi@树莓派IP
-   cd /home/pi/roommate-bills
+   cd /home/pi/7769
    python3 -m venv venv
    source venv/bin/activate
    pip install flask flask-sqlalchemy flask-login werkzeug
@@ -256,9 +256,9 @@ chmod 755 static/uploads/receipts
 
    [Service]
    User=pi
-   WorkingDirectory=/home/pi/roommate-bills
-   Environment=PATH=/home/pi/roommate-bills/venv/bin
-   ExecStart=/home/pi/roommate-bills/venv/bin/python app.py
+   WorkingDirectory=/home/pi/7769
+   Environment=PATH=/home/pi/7769/venv/bin
+   ExecStart=/home/pi/7769/venv/bin/python app.py
    Restart=always
 
    [Install]

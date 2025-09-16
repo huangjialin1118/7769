@@ -40,7 +40,7 @@ A Flask web application for managing and splitting bills between roommates with 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd roommate-bills
+   cd 7769
    ```
 
 2. **Create virtual environment**
@@ -90,7 +90,7 @@ The system comes with 4 pre-configured roommate accounts:
 ## 📁 Project Structure
 
 ```
-roommate-bills/
+7769/
 ├── app.py                 # Main Flask application
 ├── models.py              # Database models
 ├── templates/             # HTML templates
