@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}管理员面板 - 室友记账系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-gear"></i> 管理员面板</h2>
+        <p class="text-muted">管理系统用户、配置和查看系统日志</p>
+    </div>
+</div>
+
+<!-- Bootstrap 标签页导航 -->
+<ul class="nav nav-tabs" id="adminTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab" aria-controls="users" aria-selected="true">
+            <i class="bi bi-people"></i> 用户管理
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="config-tab" data-bs-toggle="tab" data-bs-target="#config" type="button" role="tab" aria-controls="config" aria-selected="false">
+            <i class="bi bi-gear"></i> 系统配置
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab" aria-controls="logs" aria-selected="false">
+            <i class="bi bi-journal-text"></i> 登录日志
+        </button>
+    </li>
+</ul>
+
+<!-- 标签页内容 -->
+<div class="tab-content mt-3" id="adminTabsContent">
+
+    <!-- 用户管理标签页 -->
+    <div class="tab-pane fade show active" id="users" role="tabpanel" aria-labelledby="users-tab">
+        <!-- 统计信息 -->
+        <div class="row mb-4">
+            <div class="col-md-2 mb-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-primary">{{ stats.total_users }}</h5>
+                        <p class="card-text">总用户数</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2 mb-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-success">{{ stats.active_users }}</h5>
+                        <p class="card-text">活跃用户</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2 mb-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-info">{{ stats.admin_users }}</h5>
+                        <p class="card-text">管理员</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-warning">{{ stats.default_password_users }}</h5>
+                        <p class="card-text">使用默认密码</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title text-danger">{{ stats.locked_users }}</h5>
+                        <p class="card-text">需重置密码</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 用户管理 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-people"></i> 用户管理
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>用户名</th>
+                                        <th>显示名称</th>
+                                        <th>状态</th>
+                                        <th>角色</th>
+                                        <th>密码状态</th>
+                                        <th>最后登录</th>
+                                        <th>创建时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for user in users %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ user.username }}</strong>
+                                            {% if user.id == current_user.id %}
+                                                <span class="badge bg-secondary ms-1">当前用户</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ user.display_name }}</td>
+                                        <td>
+                                            {% if user.needs_password_reset() %}
+                                                <span class="badge bg-warning">
+                                                    <i class="bi bi-exclamation-triangle"></i> 需要重置密码
+                                                </span>
+                                            {% elif user.is_active %}
+                                                <span class="badge bg-success">
+                                                    <i class="bi bi-check-circle"></i> 正常
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">
+                                                    <i class="bi bi-x-circle"></i> 已禁用
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if user.is_admin %}
+                                                <span class="badge bg-primary">
+                                                    <i class="bi bi-star"></i> 管理员
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-light text-dark">普通用户</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if user.is_default_password %}
+                                                <span class="badge bg-warning">
+                                                    <i class="bi bi-exclamation-triangle"></i> 默认
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-success">
+                                                    <i class="bi bi-shield-check"></i> 自定义
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if user.last_login %}
+                                                {{ user.last_login.strftime('%m-%d %H:%M') }}
+                                            {% else %}
+                                                <span class="text-muted">从未登录</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ user.created_at.strftime('%Y-%m-%d') }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作说明 -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-info-circle"></i> 操作说明
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-12">
+                                <h6><i class="bi bi-exclamation-triangle text-warning"></i> 密码重置状态</h6>
+                                <p class="small text-muted">显示用户是否因登录失败次数过多而需要重置密码。用户可在登录页面自行重置密码为默认密码。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系统配置标签页 -->
+    <div class="tab-pane fade" id="config" role="tabpanel" aria-labelledby="config-tab">
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-gear"></i> 系统配置
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="{{ url_for('admin_config') }}">
+                            {% if config_groups %}
+                                {% for category, configs in config_groups.items() %}
+                                    {% if configs %}
+                                    <div class="mb-4">
+                                        <h6 class="text-primary border-bottom pb-2">
+                                            {% if category == 'security' %}
+                                                <i class="bi bi-shield-check"></i> 安全设置
+                                            {% elif category == 'bills' %}
+                                                <i class="bi bi-receipt"></i> 账单设置
+                                            {% elif category == 'system' %}
+                                                <i class="bi bi-gear"></i> 系统设置
+                                            {% else %}
+                                                <i class="bi bi-folder"></i> 其它设置
+                                            {% endif %}
+                                        </h6>
+                                        <div class="row">
+                                            {% for config in configs %}
+                                            <div class="col-md-6 mb-3">
+                                                <label for="config_{{ config.key }}" class="form-label">
+                                                    {{ config.description or config.key }}
+                                                </label>
+                                                <input type="text" class="form-control"
+                                                       id="config_{{ config.key }}"
+                                                       name="config_{{ config.key }}"
+                                                       value="{{ config.value }}">
+                                                <div class="form-text">配置键: {{ config.key }}</div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-check-lg"></i> 保存配置
+                                    </button>
+                                </div>
+                            {% else %}
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i> 暂无系统配置项
+                                </div>
+                            {% endif %}
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 登录日志标签页 -->
+    <div class="tab-pane fade" id="logs" role="tabpanel" aria-labelledby="logs-tab">
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-journal-text"></i> 登录日志
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- 统计信息 -->
+                        {% if log_stats %}
+                        <div class="row mb-4">
+                            <div class="col-md-3">
+                                <div class="card text-center bg-light">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-primary">{{ log_stats.total }}</h5>
+                                        <p class="card-text">总登录次数</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center bg-light">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-success">{{ log_stats.success }}</h5>
+                                        <p class="card-text">成功登录</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center bg-light">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-danger">{{ log_stats.failed }}</h5>
+                                        <p class="card-text">失败登录</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center bg-light">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-info">{{ log_stats.success_rate }}%</h5>
+                                        <p class="card-text">成功率</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- 查看完整日志按钮 -->
+                        <div class="d-grid">
+                            <a href="{{ url_for('admin_logs') }}" class="btn btn-outline-primary">
+                                <i class="bi bi-eye"></i> 查看完整登录日志
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

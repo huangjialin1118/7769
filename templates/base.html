@@ -35,6 +35,12 @@
                 <a class="nav-link" href="{{ url_for('index') }}">首页</a>
                 <a class="nav-link" href="{{ url_for('add_bill') }}">添加账单</a>
                 <a class="nav-link" href="{{ url_for('dashboard') }}">个人面板</a>
+                <a class="nav-link" href="{{ url_for('settings') }}">个人设置</a>
+                {% if current_user.is_admin %}
+                <a class="nav-link" href="{{ url_for('admin') }}">
+                    <i class="bi bi-gear"></i> 管理员
+                </a>
+                {% endif %}
                 <a class="nav-link" href="{{ url_for('logout') }}">登出 ({{ current_user.display_name }})</a>
             </div>
         </div>
@@ -42,11 +48,19 @@
     {% endif %}
 
     <!-- 消息提示 -->
-    {% with messages = get_flashed_messages() %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <div class="container mt-3">
-                {% for message in messages %}
-                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                {% for category, message in messages %}
+                    {% set alert_class = 'alert-success' %}
+                    {% if category == 'error' %}
+                        {% set alert_class = 'alert-danger' %}
+                    {% elif category == 'warning' %}
+                        {% set alert_class = 'alert-warning' %}
+                    {% elif category == 'info' %}
+                        {% set alert_class = 'alert-info' %}
+                    {% endif %}
+                    <div class="alert {{ alert_class }} alert-dismissible fade show py-2" role="alert">
                         {{ message }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>

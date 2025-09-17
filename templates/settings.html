@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}个人设置 - 室友记账系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- 个人信息编辑 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-person-gear"></i> 个人信息
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">
+                            <i class="bi bi-person"></i> 用户名
+                        </label>
+                        <input type="text" class="form-control" id="username" value="{{ user.username }}" readonly>
+                        <div class="form-text">用户名不可修改</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="display_name" class="form-label">
+                            <i class="bi bi-card-text"></i> 显示名称
+                        </label>
+                        <input type="text" class="form-control" id="display_name"
+                               name="display_name" value="{{ user.display_name }}"
+                               required maxlength="100">
+                        <div class="form-text">这将在系统中显示的名称</div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> 更新个人信息
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 账户状态信息 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-shield-check"></i> 账户状态
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-sm-5"><strong>账户状态：</strong></div>
+                    <div class="col-sm-7">
+                        {% if user.is_active %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle"></i> 正常
+                            </span>
+                        {% else %}
+                            <span class="badge bg-danger">
+                                <i class="bi bi-x-circle"></i> 已禁用
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-sm-5"><strong>密码状态：</strong></div>
+                    <div class="col-sm-7">
+                        {% if user.is_default_password %}
+                            <span class="badge bg-warning">
+                                <i class="bi bi-exclamation-triangle"></i> 默认密码
+                            </span>
+                        {% else %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-shield-check"></i> 自定义密码
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-sm-5"><strong>账户创建时间：</strong></div>
+                    <div class="col-sm-7">{{ user.created_at.strftime('%Y年%m月%d日 %H:%M') }}</div>
+                </div>
+
+                {% if user.last_login %}
+                <div class="row mb-3">
+                    <div class="col-sm-5"><strong>最后登录：</strong></div>
+                    <div class="col-sm-7">{{ user.last_login.strftime('%Y年%m月%d日 %H:%M') }}</div>
+                </div>
+                {% endif %}
+
+                <div class="row mb-3">
+                    <div class="col-sm-5"><strong>登录失败次数：</strong></div>
+                    <div class="col-sm-7">
+                        {% if user.login_attempts > 0 %}
+                            <span class="badge bg-warning">{{ user.login_attempts }} 次</span>
+                        {% else %}
+                            <span class="badge bg-success">0 次</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if user.locked_until %}
+                <div class="row mb-3">
+                    <div class="col-sm-5"><strong>锁定到期：</strong></div>
+                    <div class="col-sm-7">
+                        <span class="badge bg-danger">
+                            {{ user.locked_until.strftime('%Y年%m月%d日 %H:%M') }}
+                        </span>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if user.is_admin %}
+                <div class="row">
+                    <div class="col-sm-5"><strong>管理员权限：</strong></div>
+                    <div class="col-sm-7">
+                        <span class="badge bg-primary">
+                            <i class="bi bi-star"></i> 是
+                        </span>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 快捷操作 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-gear"></i> 快捷操作
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="d-grid">
+                            <a href="{{ url_for('change_password') }}" class="btn btn-outline-primary">
+                                <i class="bi bi-key"></i> 修改密码
+                            </a>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="d-grid">
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-info">
+                                <i class="bi bi-graph-up"></i> 个人面板
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

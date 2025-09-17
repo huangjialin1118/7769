@@ -1,8 +1,9 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, abort
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
-from models import db, User, Bill, Settlement, Receipt
+from models import db, User, Bill, Settlement, Receipt, SystemConfig, LoginLog
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
+from functools import wraps
 import os
 import secrets
 
@@ -49,6 +50,16 @@ login_manager.session_protection = 'strong'  # 强会话保护
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+def admin_required(f):
+    """管理员权限检查装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            flash('需要管理员权限才能访问此页面', 'error')
+            return abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
 def allowed_file(filename):
     """检查文件是否为允许的类型"""
     return '.' in filename and \
@@ -59,6 +70,59 @@ def secure_filename_with_timestamp(filename):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     name, ext = os.path.splitext(secure_filename(filename))
     return f"{timestamp}_{name}{ext}"
+
+def validate_password_strength(password):
+    """验证密码强度"""
+    import re
+
+    errors = []
+
+    # 从系统配置获取最小密码长度
+    min_length = SystemConfig.get_config('security.password_min_length', 8)
+
+    # 长度检查
+    if len(password) < min_length:
+        errors.append(f"密码至少需要{min_length}个字符")
+
+    # 包含字母检查
+    if not re.search(r'[a-zA-Z]', password):
+        errors.append("密码必须包含字母")
+
+    # 包含数字检查
+    if not re.search(r'\d', password):
+        errors.append("密码必须包含数字")
+
+    # 可选：包含特殊字符（暂时不强制要求）
+    # if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+    #     errors.append("密码必须包含特殊字符")
+
+    return errors
+
+def log_login_attempt(username, user_id=None, success=True, failure_reason=None):
+    """记录登录尝试"""
+    # 获取客户端IP地址
+    ip_address = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '未知'))
+    if ',' in ip_address:
+        ip_address = ip_address.split(',')[0].strip()
+
+    # 获取用户代理
+    user_agent = request.headers.get('User-Agent', '未知')[:500]  # 限制长度
+
+    # 创建日志记录
+    login_log = LoginLog(
+        user_id=user_id,
+        username=username,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        success=success,
+        failure_reason=failure_reason
+    )
+
+    db.session.add(login_log)
+    try:
+        db.session.commit()
+    except:
+        db.session.rollback()
 
 def init_database():
     """初始化数据库和默认用户"""
@@ -81,13 +145,43 @@ def init_database():
             {'username': 'roommate4', 'display_name': '室友4', 'password': 'password123'},
         ]
 
-        for roommate in roommates:
-            user = User(username=roommate['username'], display_name=roommate['display_name'])
+        for i, roommate in enumerate(roommates):
+            user = User(
+                username=roommate['username'],
+                display_name=roommate['display_name'],
+                is_default_password=True,  # 标记为使用默认密码
+                is_admin=(i == 0)  # 第一个用户为管理员
+            )
             user.set_password(roommate['password'])
             db.session.add(user)
 
         db.session.commit()
         print("已创建默认用户账号")
+
+    # 初始化系统配置
+    if SystemConfig.query.count() == 0:
+        default_configs = [
+            # 安全设置
+            ('security.max_login_attempts', '5', '登录失败次数限制'),
+            ('security.lockout_duration_minutes', '15', '账户锁定时长（分钟）'),
+            ('security.password_min_length', '8', '密码最小长度'),
+            ('security.force_change_default_password', 'true', '是否强制修改默认密码'),
+
+            # 账单设置
+            ('bills.allow_delete_settled', 'false', '是否允许删除已结算的账单'),
+            ('bills.max_file_size_mb', '10', '凭证文件大小限制（MB）'),
+            ('bills.allowed_file_types', 'png,jpg,jpeg,gif,pdf', '允许的文件类型'),
+
+            # 系统设置
+            ('system.default_password', 'password123', '系统默认密码'),
+            ('system.name', '室友记账系统', '系统名称'),
+        ]
+
+        for key, value, description in default_configs:
+            SystemConfig.set_config(key, value, description)
+
+        db.session.commit()
+        print("已初始化系统配置")
 
 @app.route('/')
 def index():
@@ -112,23 +206,269 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         if user and user.check_password(password):
+            # 检查账户是否需要重置密码
+            if user.needs_password_reset():
+                log_login_attempt(username, user.id, False, '需要重置密码')
+                flash('登录失败次数过多，请重置密码后再试', 'error')
+                return render_template('login.html', users=User.query.all())
+
+            # 检查账户是否激活
+            if not user.is_active:
+                log_login_attempt(username, user.id, False, '账户已禁用')
+                flash('账户已被禁用，请联系管理员', 'error')
+                return render_template('login.html', users=User.query.all())
+
+            # 重置登录失败次数
+            user.reset_login_attempts()
+            user.update_last_login()
+            db.session.commit()
+
             # remember=True时，关闭浏览器后仍保持登录
             login_user(user, remember=bool(remember))
+
+            # 记录成功登录
+            log_login_attempt(username, user.id, True)
+
+            # 检查是否为默认密码，如果是则强制修改密码
+            if user.is_default_password:
+                flash('检测到您使用的是默认密码，为了账户安全，请先修改密码', 'warning')
+                return redirect(url_for('change_password'))
+
             flash(f'欢迎回来，{user.display_name}！', 'success')
             next_page = request.args.get('next')
             return redirect(next_page or url_for('index'))
         else:
-            flash('用户名或密码错误', 'error')
+            # 登录失败处理
+            if user:
+                user.increment_login_attempts()
+                db.session.commit()
+
+                # 记录登录失败
+                log_login_attempt(username, user.id, False, '密码错误')
+
+                if user.needs_password_reset():
+                    flash(f'登录失败次数过多，请重置密码', 'error')
+                else:
+                    max_attempts = SystemConfig.get_config('security.max_login_attempts', 5)
+                    remaining_attempts = max_attempts - user.login_attempts
+                    flash(f'用户名或密码错误，还有{remaining_attempts}次尝试机会', 'error')
+            else:
+                # 用户不存在，记录失败日志
+                log_login_attempt(username, None, False, '用户不存在')
+                flash('用户名或密码错误', 'error')
 
     # 获取所有用户用于登录选择
     users = User.query.all()
     return render_template('login.html', users=users)
+
+@app.route('/reset_password/<int:user_id>', methods=['POST'])
+def reset_password(user_id):
+    """重置用户密码为默认密码"""
+    user = User.query.get_or_404(user_id)
+
+    # 检查用户是否确实需要重置密码
+    if not user.needs_password_reset():
+        flash('该用户不需要重置密码', 'error')
+        return redirect(url_for('login'))
+
+    # 重置密码
+    user.reset_to_default_password()
+    db.session.commit()
+
+    # 记录重置密码的操作
+    log_login_attempt(user.username, user.id, True, '密码已重置')
+
+    flash(f'用户 {user.display_name} 的密码已重置为默认密码 password123，请重新登录', 'success')
+    return redirect(url_for('login'))
 
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
     return redirect(url_for('login'))
+
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    """修改密码页面"""
+    if request.method == 'POST':
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+
+        # 验证当前密码
+        if not current_user.check_password(current_password):
+            flash('当前密码错误', 'error')
+            return render_template('change_password.html')
+
+        # 验证新密码确认
+        if new_password != confirm_password:
+            flash('两次输入的新密码不一致', 'error')
+            return render_template('change_password.html')
+
+        # 验证新密码强度
+        password_errors = validate_password_strength(new_password)
+        if password_errors:
+            for error in password_errors:
+                flash(error, 'error')
+            return render_template('change_password.html')
+
+        # 检查新密码是否与当前密码相同
+        if current_user.check_password(new_password):
+            flash('新密码不能与当前密码相同', 'error')
+            return render_template('change_password.html')
+
+        # 更新密码
+        current_user.set_password(new_password)
+        current_user.is_default_password = False  # 标记不再是默认密码
+        current_user.reset_login_attempts()  # 重置登录失败次数
+        db.session.commit()
+
+        flash('密码修改成功！', 'success')
+        return redirect(url_for('index'))
+
+    return render_template('change_password.html')
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    """个人设置页面"""
+    if request.method == 'POST':
+        new_display_name = request.form.get('display_name', '').strip()
+
+        if not new_display_name:
+            flash('显示名称不能为空', 'error')
+            return render_template('settings.html', user=current_user)
+
+        # 更新显示名称
+        current_user.display_name = new_display_name
+        db.session.commit()
+
+        flash('个人信息更新成功！', 'success')
+        return redirect(url_for('settings'))
+
+    return render_template('settings.html', user=current_user)
+
+@app.route('/admin')
+@login_required
+@admin_required
+def admin():
+    """管理员面板"""
+    users = User.query.all()
+
+    # 计算用户统计信息
+    total_users = len(users)
+    active_users = sum(1 for user in users if user.is_active)
+    admin_users = sum(1 for user in users if user.is_admin)
+    default_password_users = sum(1 for user in users if user.is_default_password)
+    locked_users = sum(1 for user in users if user.needs_password_reset())
+
+    stats = {
+        'total_users': total_users,
+        'active_users': active_users,
+        'admin_users': admin_users,
+        'default_password_users': default_password_users,
+        'locked_users': locked_users
+    }
+
+    # 获取系统配置
+    configs = SystemConfig.query.order_by(SystemConfig.key).all()
+    config_groups = {
+        'security': [],
+        'bills': [],
+        'system': []
+    }
+
+    for config in configs:
+        category = config.key.split('.')[0]
+        if category in config_groups:
+            config_groups[category].append(config)
+        else:
+            config_groups.setdefault('other', []).append(config)
+
+    # 获取登录日志统计
+    total_logs = LoginLog.query.count()
+    success_logs = LoginLog.query.filter_by(success=True).count()
+    failed_logs = total_logs - success_logs
+
+    log_stats = {
+        'total': total_logs,
+        'success': success_logs,
+        'failed': failed_logs,
+        'success_rate': round((success_logs / total_logs * 100) if total_logs > 0 else 0, 1)
+    }
+
+    return render_template('admin.html',
+                         users=users,
+                         stats=stats,
+                         config_groups=config_groups,
+                         log_stats=log_stats)
+
+
+
+@app.route('/admin/config', methods=['POST'])
+@login_required
+@admin_required
+def admin_config():
+    """系统配置管理（仅处理POST请求）"""
+    # 更新配置值
+    for key in request.form:
+        if key.startswith('config_'):
+            config_key = key[7:]  # 移除 'config_' 前缀
+            value = request.form[key]
+
+            # 查找并更新配置
+            config = SystemConfig.query.filter_by(key=config_key).first()
+            if config:
+                config.value = value
+                config.updated_at = datetime.utcnow()
+
+    db.session.commit()
+    flash('系统配置已更新', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/logs')
+@login_required
+@admin_required
+def admin_logs():
+    """查看登录日志"""
+    # 获取分页参数
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+
+    # 获取筛选参数
+    username_filter = request.args.get('username', '')
+    success_filter = request.args.get('success', '')
+
+    # 构建查询
+    query = LoginLog.query
+
+    if username_filter:
+        query = query.filter(LoginLog.username.like(f'%{username_filter}%'))
+
+    if success_filter:
+        success_bool = success_filter.lower() == 'true'
+        query = query.filter(LoginLog.success == success_bool)
+
+    # 按时间倒序排列并分页
+    logs = query.order_by(LoginLog.login_time.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    # 统计信息
+    total_logs = LoginLog.query.count()
+    success_logs = LoginLog.query.filter_by(success=True).count()
+    failed_logs = total_logs - success_logs
+
+    stats = {
+        'total': total_logs,
+        'success': success_logs,
+        'failed': failed_logs,
+        'success_rate': round((success_logs / total_logs * 100) if total_logs > 0 else 0, 1)
+    }
+
+    return render_template('admin_logs.html', logs=logs, stats=stats,
+                         username_filter=username_filter, success_filter=success_filter)
 
 @app.route('/add_bill', methods=['GET', 'POST'])
 @login_required

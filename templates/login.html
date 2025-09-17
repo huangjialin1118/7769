@@ -23,8 +23,7 @@
 
                     <div class="mb-3">
                         <label for="password" class="form-label">密码</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                        <div class="form-text">默认密码：password123</div>
+                        <input type="password" class="form-control" id="password" name="password" required placeholder="请输入密码">
                     </div>
 
                     <div class="mb-3">
@@ -39,15 +38,65 @@
 
                     <button type="submit" class="btn btn-primary w-100">登录</button>
                 </form>
+
+                <!-- 重置密码选项 -->
+                <div class="mt-3">
+                    {% for user in users %}
+                        {% if user.needs_password_reset() %}
+                        <div class="alert alert-warning" id="reset-option-{{ user.id }}" style="display: none;">
+                            <h6><i class="bi bi-exclamation-triangle"></i> 密码重置</h6>
+                            <p class="mb-2">用户 <strong>{{ user.display_name }}</strong> 登录失败次数过多，需要重置密码。</p>
+                            <form method="POST" action="{{ url_for('reset_password', user_id=user.id) }}" style="display: inline;">
+                                <button type="submit" class="btn btn-warning btn-sm"
+                                        onclick="return confirm('确定要重置 {{ user.display_name }} 的密码吗？重置后密码将变为 password123')">
+                                    <i class="bi bi-arrow-clockwise"></i> 重置密码
+                                </button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
             </div>
         </div>
 
-        <div class="mt-3 text-center">
-            <small class="text-muted">
-                适用于多设备同时使用，每个设备维持独立登录状态<br>
-                测试账号：roommate1-4, 密码：password123
-            </small>
-        </div>
     </div>
 </div>
+
+<script>
+// 当用户选择改变时，显示对应的重置密码选项和更新密码提示
+document.getElementById('username').addEventListener('change', function() {
+    // 隐藏所有重置选项
+    const resetOptions = document.querySelectorAll('[id^="reset-option-"]');
+    resetOptions.forEach(option => {
+        option.style.display = 'none';
+    });
+
+    const passwordInput = document.getElementById('password');
+    const selectedUsername = this.value;
+
+    if (selectedUsername) {
+        // 找到对应的用户ID并显示重置选项，同时更新密码提示
+        {% for user in users %}
+            {% if user.needs_password_reset() %}
+            if (selectedUsername === '{{ user.username }}') {
+                document.getElementById('reset-option-{{ user.id }}').style.display = 'block';
+            }
+            {% endif %}
+
+            // 根据用户的密码状态更新placeholder
+            if (selectedUsername === '{{ user.username }}') {
+                {% if user.is_default_password %}
+                    passwordInput.placeholder = '默认密码：password123';
+                {% else %}
+                    passwordInput.placeholder = '请输入自定义密码';
+                {% endif %}
+            }
+        {% endfor %}
+    } else {
+        // 没有选中用户时恢复默认提示
+        passwordInput.placeholder = '请输入密码';
+    }
+});
+</script>
+
 {% endblock %}

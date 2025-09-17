@@ -12,6 +12,14 @@ class User(UserMixin, db.Model):
     display_name = db.Column(db.String(100), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # 新增安全相关字段
+    is_default_password = db.Column(db.Boolean, default=True, nullable=False)  # 是否使用默认密码
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)  # 是否为管理员
+    last_login = db.Column(db.DateTime)  # 最后登录时间
+    login_attempts = db.Column(db.Integer, default=0, nullable=False)  # 登录失败次数
+    locked_until = db.Column(db.DateTime)  # 账户锁定到期时间
+    is_active = db.Column(db.Boolean, default=True, nullable=False)  # 账户是否激活
+
     # 关系
     bills_paid = db.relationship('Bill', backref='payer', lazy=True, foreign_keys='Bill.payer_id')
     settlements = db.relationship('Settlement', backref='settler', lazy=True)
@@ -21,6 +29,36 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    def needs_password_reset(self):
+        """检查是否需要重置密码（登录失败次数过多）"""
+        max_attempts = SystemConfig.get_config('security.max_login_attempts', 5)
+        return self.login_attempts >= max_attempts
+
+    def lock_account(self, duration_minutes=15):
+        """锁定账户指定时间（分钟）"""
+        from datetime import timedelta
+        self.locked_until = datetime.utcnow() + timedelta(minutes=duration_minutes)
+
+    def reset_to_default_password(self):
+        """重置为默认密码并清除失败记录"""
+        self.set_password('password123')  # 重置为默认密码
+        self.login_attempts = 0  # 清除失败次数
+        self.is_default_password = True  # 标记为使用默认密码
+        self.locked_until = None  # 清除锁定时间（如果有的话）
+
+    def increment_login_attempts(self):
+        """增加登录失败次数"""
+        self.login_attempts += 1
+        # 不再锁定账户，而是在达到上限时等待用户主动重置密码
+
+    def reset_login_attempts(self):
+        """重置登录失败次数"""
+        self.login_attempts = 0
+
+    def update_last_login(self):
+        """更新最后登录时间"""
+        self.last_login = datetime.utcnow()
 
     def __repr__(self):
         return f'<User {self.username}>'
@@ -139,3 +177,72 @@ class Receipt(db.Model):
 
     def __repr__(self):
         return f'<Receipt {self.filename} for bill {self.bill_id}>'
+
+class SystemConfig(db.Model):
+    """系统配置模型（键值对存储）"""
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.String(500), nullable=False)
+    description = db.Column(db.String(200))  # 配置项描述
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @staticmethod
+    def get_config(key, default_value=None):
+        """获取配置值"""
+        config = SystemConfig.query.filter_by(key=key).first()
+        if config:
+            # 尝试转换为合适的类型
+            try:
+                # 处理布尔值
+                if config.value.lower() in ['true', 'false']:
+                    return config.value.lower() == 'true'
+                # 处理整数
+                if config.value.isdigit():
+                    return int(config.value)
+                # 处理浮点数
+                if '.' in config.value and config.value.replace('.', '').isdigit():
+                    return float(config.value)
+                # 返回字符串
+                return config.value
+            except:
+                return config.value
+        return default_value
+
+    @staticmethod
+    def set_config(key, value, description=None):
+        """设置配置值"""
+        config = SystemConfig.query.filter_by(key=key).first()
+        if config:
+            config.value = str(value)
+            config.updated_at = datetime.utcnow()
+            if description:
+                config.description = description
+        else:
+            config = SystemConfig(
+                key=key,
+                value=str(value),
+                description=description
+            )
+            db.session.add(config)
+
+    def __repr__(self):
+        return f'<SystemConfig {self.key}={self.value}>'
+
+class LoginLog(db.Model):
+    """登录日志模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    username = db.Column(db.String(80), nullable=False)  # 记录用户名，即使用户被删除也能查看
+    ip_address = db.Column(db.String(45))  # IPv4和IPv6地址
+    user_agent = db.Column(db.String(500))  # 浏览器信息
+    login_time = db.Column(db.DateTime, default=datetime.utcnow)
+    success = db.Column(db.Boolean, nullable=False)  # 登录是否成功
+    failure_reason = db.Column(db.String(200))  # 失败原因
+
+    # 关系
+    user = db.relationship('User', backref='login_logs', lazy=True)
+
+    def __repr__(self):
+        status = "成功" if self.success else "失败"
+        return f'<LoginLog {self.username} {status} at {self.login_time}>'

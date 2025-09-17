@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}登录日志 - 室友记账系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-journal-text"></i> 登录日志</h2>
+        <p class="text-muted">系统登录记录和安全审计</p>
+    </div>
+</div>
+
+<!-- 统计信息 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-primary">{{ stats.total }}</h5>
+                <p class="card-text">总登录次数</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-success">{{ stats.success }}</h5>
+                <p class="card-text">成功登录</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-danger">{{ stats.failed }}</h5>
+                <p class="card-text">失败登录</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-info">{{ stats.success_rate }}%</h5>
+                <p class="card-text">成功率</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 筛选表单 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-funnel"></i> 筛选条件
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="GET">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label for="username" class="form-label">用户名</label>
+                            <input type="text" class="form-control" id="username" name="username"
+                                   value="{{ username_filter }}" placeholder="输入用户名">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="success" class="form-label">登录状态</label>
+                            <select class="form-control" id="success" name="success">
+                                <option value="">全部</option>
+                                <option value="true" {{ 'selected' if success_filter == 'true' }}>成功</option>
+                                <option value="false" {{ 'selected' if success_filter == 'false' }}>失败</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary me-2">
+                                <i class="bi bi-search"></i> 筛选
+                            </button>
+                            <a href="{{ url_for('admin_logs') }}" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-clockwise"></i> 重置
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 登录日志表格 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-table"></i> 登录记录
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if logs.items %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>用户名</th>
+                                <th>状态</th>
+                                <th>失败原因</th>
+                                <th>IP地址</th>
+                                <th>用户代理</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in logs.items %}
+                            <tr class="{{ 'table-success' if log.success else 'table-danger' }}">
+                                <td>{{ log.login_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>
+                                    <strong>{{ log.username }}</strong>
+                                    {% if log.user %}
+                                        <small class="text-muted">({{ log.user.display_name }})</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if log.success %}
+                                        <span class="badge bg-success">
+                                            <i class="bi bi-check-circle"></i> 成功
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-danger">
+                                            <i class="bi bi-x-circle"></i> 失败
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if log.failure_reason %}
+                                        <span class="text-danger">{{ log.failure_reason }}</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <code>{{ log.ip_address }}</code>
+                                </td>
+                                <td>
+                                    <small class="text-muted" title="{{ log.user_agent }}">
+                                        {{ log.user_agent[:50] }}{% if log.user_agent|length > 50 %}...{% endif %}
+                                    </small>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 分页 -->
+                {% if logs.pages > 1 %}
+                <nav aria-label="登录日志分页">
+                    <ul class="pagination justify-content-center">
+                        {% if logs.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin_logs', page=logs.prev_num, username=username_filter, success=success_filter) }}">
+                                    <i class="bi bi-chevron-left"></i> 上一页
+                                </a>
+                            </li>
+                        {% endif %}
+
+                        {% for page_num in logs.iter_pages() %}
+                            {% if page_num %}
+                                {% if page_num != logs.page %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin_logs', page=page_num, username=username_filter, success=success_filter) }}">
+                                            {{ page_num }}
+                                        </a>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page_num }}</span>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">…</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if logs.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin_logs', page=logs.next_num, username=username_filter, success=success_filter) }}">
+                                    下一页 <i class="bi bi-chevron-right"></i>
+                                </a>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+
+                <div class="text-center text-muted">
+                    显示第 {{ (logs.page - 1) * logs.per_page + 1 }} - {{ logs.page * logs.per_page if logs.page * logs.per_page < logs.total else logs.total }} 条，
+                    共 {{ logs.total }} 条记录
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="alert alert-info text-center">
+                    <i class="bi bi-info-circle"></i> 暂无登录记录
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 返回按钮 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> 返回管理面板
+        </a>
+    </div>
+</div>
+{% endblock %}

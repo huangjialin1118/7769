@@ -32,6 +32,19 @@ A Flask web application for managing and splitting bills between roommates with 
 - **Debt Tracking**: Who owes what to whom
 - **Personal Panel**: Individual payment history and obligations
 
+### 🔐 Security & User Management
+- **Login Failure Tracking**: Automatic tracking of failed login attempts
+- **Password Reset System**: User-friendly self-service password reset (no account locking)
+- **Dynamic Password Hints**: Context-aware password field placeholders
+- **Login Audit**: Comprehensive login logging with IP and browser tracking
+- **Session Management**: Secure session handling with remember-me functionality
+
+### 👨‍💼 Administrator Features
+- **User Management Panel**: View all users, password status, and login statistics
+- **System Configuration**: Dynamic system settings management
+- **Login Logs**: Detailed audit trail with filtering and pagination
+- **Security Dashboard**: Real-time statistics on login success/failure rates
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -104,12 +117,14 @@ ifconfig | grep 'inet ' | grep -v '127.0.0.1'
 
 The system comes with 4 pre-configured roommate accounts:
 
-| Username | Password | Display Name |
-|----------|----------|--------------|
-| roommate1 | password123 | 室友1 |
-| roommate2 | password123 | 室友2 |
-| roommate3 | password123 | 室友3 |
-| roommate4 | password123 | 室友4 |
+| Username | Password | Display Name | Role |
+|----------|----------|--------------|------|
+| roommate1 | password123 | 室友1 | Admin |
+| roommate2 | password123 | 室友2 | User |
+| roommate3 | password123 | 室友3 | User |
+| roommate4 | password123 | 室友4 | User |
+
+*The first user (室友1) has administrator privileges for system management.*
 
 ## 🏗️ Tech Stack
 
@@ -149,6 +164,11 @@ The system comes with 4 pre-configured roommate accounts:
 - `password_hash`: Hashed password
 - `display_name`: Display name shown in UI
 - `created_at`: Account creation timestamp
+- `is_default_password`: Whether user is using default password
+- `is_admin`: Administrator privileges flag
+- `last_login`: Last successful login timestamp
+- `login_attempts`: Failed login attempt counter
+- `is_active`: Account activation status
 
 ### Bill
 - `id`: Primary key
@@ -175,10 +195,29 @@ The system comes with 4 pre-configured roommate accounts:
 - `file_size`: File size in bytes
 - `upload_date`: Upload timestamp
 
+### SystemConfig
+- `id`: Primary key
+- `key`: Configuration key (unique)
+- `value`: Configuration value
+- `description`: Human-readable description
+- `created_at`: Creation timestamp
+- `updated_at`: Last update timestamp
+
+### LoginLog
+- `id`: Primary key
+- `user_id`: Associated user (Foreign Key, nullable)
+- `username`: Username attempted (preserved even if user deleted)
+- `ip_address`: Client IP address
+- `user_agent`: Browser/client information
+- `login_time`: Attempt timestamp
+- `success`: Whether login succeeded
+- `failure_reason`: Reason for failure (if applicable)
+
 ## 🔧 API Endpoints
 
+### Core Routes
 - `GET /` - Main dashboard
-- `GET /login` - Login page
+- `GET /login` - Login page (with password reset functionality)
 - `POST /login` - Process login
 - `GET /logout` - Logout user
 - `GET /add_bill` - Add bill form
@@ -187,8 +226,18 @@ The system comes with 4 pre-configured roommate accounts:
 - `POST /edit_bill/<bill_id>` - Process bill edit (creator-only)
 - `POST /delete_bill/<bill_id>` - Delete bill with cascade deletion (creator-only)
 - `GET /dashboard` - Personal dashboard
+
+### Settlement Routes
 - `GET /settle_individual/<bill_id>/<user_id>` - Toggle individual settlement
 - `GET /toggle_settlement/<bill_id>` - Toggle all settlements
+
+### Administrator Routes (Admin-only)
+- `GET /admin` - Administrator panel
+- `POST /admin_config` - Update system configuration
+- `GET /admin_logs` - View login logs with filtering
+- `POST /reset_password/<user_id>` - Reset user password to default
+
+### API Routes
 - `GET /api/debt_details` - Get debt information (JSON)
 - `GET /api/receipt/<bill_id>` - Get receipt information (JSON)
 - `DELETE /api/receipt/<receipt_id>` - Delete individual receipt file
@@ -225,6 +274,31 @@ The system comes with 4 pre-configured roommate accounts:
 2. Multiple files appear as tabs in the modal
 3. Use download dropdown for individual file downloads
 4. Click fullscreen button for better viewing
+
+### Password Reset (Self-Service)
+1. If you exceed maximum login attempts (default: 5), a reset button appears
+2. Click "重置密码" (Reset Password) button on login page
+3. Your password resets to "password123" automatically
+4. Login with the default password
+5. Change to a custom password after successful login
+
+### Administrator Features (Admin Users Only)
+1. **User Management**:
+   - View all user accounts and their status
+   - See password status (default/custom)
+   - Monitor login attempts and last login times
+   - View security statistics
+
+2. **System Configuration**:
+   - Adjust maximum login attempts
+   - Configure other system parameters
+   - Real-time configuration updates
+
+3. **Login Logs**:
+   - View complete login audit trail
+   - Filter by username or success/failure
+   - Paginated results for large datasets
+   - Export functionality for security analysis
 
 ## 🐛 Troubleshooting
 
