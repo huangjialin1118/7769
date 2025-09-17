@@ -1,0 +1,518 @@
+{% extends "base.html" %}
+
+{% block title %}编辑账单 - 室友记账系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">编辑账单</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <!-- 账单类型选择 -->
+                    <div class="mb-3">
+                        <label class="form-label">选择账单类型</label>
+                        <div class="row g-2">
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="water" id="type_water"
+                                       {% if 'water' in bill.description.lower() or '水费' in bill.description %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_water">
+                                    💧 水费
+                                </label>
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="electricity" id="type_electricity"
+                                       {% if 'electricity' in bill.description.lower() or '电费' in bill.description %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_electricity">
+                                    ⚡ 电费
+                                </label>
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="gas" id="type_gas"
+                                       {% if 'gas' in bill.description.lower() or '燃气费' in bill.description %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_gas">
+                                    🔥 燃气费
+                                </label>
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="trash" id="type_trash"
+                                       {% if 'trash' in bill.description.lower() or '垃圾费' in bill.description %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_trash">
+                                    🗑️ 垃圾费
+                                </label>
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="internet" id="type_internet"
+                                       {% if 'internet' in bill.description.lower() or '网费' in bill.description %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_internet">
+                                    🌐 网费
+                                </label>
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="shopping" id="type_shopping"
+                                       {% if 'shopping' in bill.description.lower() or '购物' in bill.description %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_shopping">
+                                    🛒 购物
+                                </label>
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="food" id="type_food"
+                                       {% if 'food' in bill.description.lower() or '餐饮' in bill.description %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_food">
+                                    🍕 餐饮
+                                </label>
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="transportation" id="type_transportation"
+                                       {% if 'transportation' in bill.description.lower() or '交通' in bill.description %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_transportation">
+                                    🚗 交通
+                                </label>
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <input type="radio" class="btn-check" name="bill_type" value="other" id="type_other"
+                                       {% if not (('water' in bill.description.lower() or '水费' in bill.description) or
+                                                 ('electricity' in bill.description.lower() or '电费' in bill.description) or
+                                                 ('gas' in bill.description.lower() or '燃气费' in bill.description) or
+                                                 ('trash' in bill.description.lower() or '垃圾费' in bill.description) or
+                                                 ('internet' in bill.description.lower() or '网费' in bill.description) or
+                                                 ('shopping' in bill.description.lower() or '购物' in bill.description) or
+                                                 ('food' in bill.description.lower() or '餐饮' in bill.description) or
+                                                 ('transportation' in bill.description.lower() or '交通' in bill.description)) %}checked{% endif %}>
+                                <label class="btn btn-outline-primary w-100" for="type_other">
+                                    📝 其它
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 自定义描述输入框 -->
+                    <div class="mb-3" id="customDescriptionDiv">
+                        <label for="description" class="form-label">账单描述</label>
+                        <input type="text" class="form-control" id="description" name="description"
+                               placeholder="请输入账单描述" value="{{ bill.description }}" required>
+                    </div>
+
+                    <!-- 账单金额 -->
+                    <div class="mb-3">
+                        <label for="amount" class="form-label">账单金额 (元)</label>
+                        <input type="number" step="0.01" class="form-control" id="amount" name="amount"
+                               placeholder="0.00" value="{{ '%.2f'|format(bill.amount) }}" required>
+                    </div>
+
+                    <!-- 账单日期 -->
+                    <div class="mb-3">
+                        <label for="date" class="form-label">账单日期</label>
+                        <input type="date" class="form-control" id="date" name="date"
+                               value="{{ bill.date.strftime('%Y-%m-%d') }}" required>
+                    </div>
+
+                    <!-- 参与者选择 -->
+                    <div class="mb-3">
+                        <label class="form-label">选择参与者</label>
+                        <div class="row g-2">
+                            {% set current_participants = bill.get_participants_list() %}
+                            {% for user in users %}
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input participant-checkbox" type="checkbox"
+                                           name="participants" value="{{ user.id }}" id="user_{{ user.id }}"
+                                           {% if user.id in current_participants %}checked{% endif %}>
+                                    <label class="form-check-label" for="user_{{ user.id }}">
+                                        {{ user.display_name }}
+                                        {% if user.id == bill.payer_id %}
+                                            <span class="badge bg-primary">付款人</span>
+                                        {% endif %}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <small class="text-muted">注意：付款人会自动包含在参与者中</small>
+                    </div>
+
+                    <!-- 现有凭证文件 -->
+                    {% if bill.receipts %}
+                    <div class="mb-3">
+                        <label class="form-label">现有凭证文件</label>
+                        <div class="row g-2" id="existingReceipts">
+                            {% for receipt in bill.receipts %}
+                            <div class="col-md-6" id="receipt-{{ receipt.id }}">
+                                <div class="card border-info">
+                                    <div class="card-body p-2">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <small class="text-muted">{{ receipt.filename }}</small><br>
+                                                <small class="text-muted">{{ (receipt.file_size / 1024) | round(1) }} KB</small>
+                                            </div>
+                                            <div>
+                                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                                        onclick="deleteExistingReceipt({{ receipt.id }}, '{{ receipt.filename }}')">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- 新凭证文件上传 -->
+                    <div class="mb-3">
+                        <label for="receipts" class="form-label">上传新凭证文件（可选）</label>
+                        <div class="file-upload-area" id="fileUploadArea">
+                            <div class="file-upload-content">
+                                <i class="bi bi-cloud-upload" style="font-size: 3rem; color: #6c757d;"></i>
+                                <p class="mb-2">点击选择文件或拖拽文件到此处</p>
+                                <p class="small text-muted">支持图片 (JPG, PNG, GIF) 和 PDF 文件，单个文件最大 10MB</p>
+                                <input type="file" class="form-control d-none" id="receipts" name="receipts"
+                                       multiple accept=".jpg,.jpeg,.png,.gif,.pdf">
+                            </div>
+                        </div>
+
+                        <!-- 文件预览区域 -->
+                        <div class="mt-3" id="filePreviewArea" style="display: none;">
+                            <label class="form-label">已选择的文件：</label>
+                            <div id="fileList" class="row g-2"></div>
+                        </div>
+                    </div>
+
+                    <!-- 费用分摊预览 -->
+                    <div class="mb-3">
+                        <div class="card border-info">
+                            <div class="card-header bg-info text-white">
+                                <h6 class="mb-0">💰 费用分摊预览</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="splitPreview">
+                                    <p class="text-muted text-center">请先选择参与者和输入金额</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 提交按钮 -->
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary me-md-2">取消</a>
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            <i class="bi bi-check-circle"></i> 保存修改
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.file-upload-area {
+    border: 2px dashed #dee2e6;
+    border-radius: 0.375rem;
+    padding: 2rem;
+    text-align: center;
+    transition: border-color 0.15s ease-in-out;
+    cursor: pointer;
+    background-color: #f8f9fa;
+}
+
+.file-upload-area:hover,
+.file-upload-area.dragover {
+    border-color: #0d6efd;
+    background-color: #e7f3ff;
+}
+
+.file-preview-item {
+    position: relative;
+}
+
+.file-remove-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(220, 53, 69, 0.8);
+    border: none;
+    border-radius: 50%;
+    width: 25px;
+    height: 25px;
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.file-remove-btn:hover {
+    background: rgba(220, 53, 69, 1);
+}
+
+.bill-type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+}
+
+#splitPreview .participant-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    margin-bottom: 0.5rem;
+}
+
+#splitPreview .participant-item.payer {
+    background-color: #e7f3ff;
+    border-color: #0d6efd;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fileUploadArea = document.getElementById('fileUploadArea');
+    const fileInput = document.getElementById('receipts');
+    const filePreviewArea = document.getElementById('filePreviewArea');
+    const fileList = document.getElementById('fileList');
+    const participantCheckboxes = document.querySelectorAll('.participant-checkbox');
+    const amountInput = document.getElementById('amount');
+    const splitPreview = document.getElementById('splitPreview');
+    let selectedFiles = [];
+
+    // 确保付款人始终被选中
+    const payerCheckbox = document.querySelector('input[name="participants"][value="{{ bill.payer_id }}"]');
+    if (payerCheckbox) {
+        payerCheckbox.checked = true;
+        payerCheckbox.disabled = true;
+    }
+
+    // 文件上传区域点击事件
+    fileUploadArea.addEventListener('click', function(e) {
+        if (e.target !== fileInput) {
+            fileInput.click();
+        }
+    });
+
+    // 拖拽功能
+    fileUploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        fileUploadArea.classList.add('dragover');
+    });
+
+    fileUploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        fileUploadArea.classList.remove('dragover');
+    });
+
+    fileUploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        fileUploadArea.classList.remove('dragover');
+
+        const files = Array.from(e.dataTransfer.files);
+        handleFileSelection(files);
+    });
+
+    // 文件选择事件
+    fileInput.addEventListener('change', function(e) {
+        const files = Array.from(e.target.files);
+        handleFileSelection(files);
+    });
+
+    // 处理文件选择
+    function handleFileSelection(files) {
+        files.forEach(file => {
+            if (isValidFile(file)) {
+                selectedFiles.push({
+                    file: file,
+                    id: Date.now() + Math.random()
+                });
+            } else {
+                alert(`文件 "${file.name}" 格式不支持或超过大小限制`);
+            }
+        });
+
+        updateFilePreview();
+        updateFileInput();
+    }
+
+    // 验证文件
+    function isValidFile(file) {
+        const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+        const maxSize = 10 * 1024 * 1024; // 10MB
+
+        return validTypes.includes(file.type) && file.size <= maxSize;
+    }
+
+    // 更新文件预览
+    function updateFilePreview() {
+        if (selectedFiles.length === 0) {
+            filePreviewArea.style.display = 'none';
+            return;
+        }
+
+        filePreviewArea.style.display = 'block';
+        fileList.innerHTML = '';
+
+        selectedFiles.forEach((fileObj, index) => {
+            const file = fileObj.file;
+            const fileItem = document.createElement('div');
+            fileItem.className = 'col-md-4 file-preview-item';
+
+            const isImage = file.type.startsWith('image/');
+            let previewContent = '';
+
+            if (isImage) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    fileItem.querySelector('.file-preview').src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+                previewContent = `<img class="file-preview img-fluid rounded" src="" alt="预览" style="max-height: 100px;">`;
+            } else {
+                previewContent = `<div class="file-preview d-flex align-items-center justify-content-center bg-light rounded" style="height: 100px;">
+                    <i class="bi bi-file-earmark-pdf" style="font-size: 2rem; color: #dc3545;"></i>
+                </div>`;
+            }
+
+            fileItem.innerHTML = `
+                <div class="card">
+                    <div class="card-body p-2 text-center">
+                        ${previewContent}
+                        <small class="d-block mt-1 text-truncate">${file.name}</small>
+                        <small class="text-muted">${(file.size / 1024).toFixed(1)} KB</small>
+                        <button type="button" class="file-remove-btn" onclick="removeFile(${index})">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            fileList.appendChild(fileItem);
+        });
+    }
+
+    // 删除文件
+    window.removeFile = function(index) {
+        selectedFiles.splice(index, 1);
+        updateFilePreview();
+        updateFileInput();
+    }
+
+    // 更新文件输入框
+    function updateFileInput() {
+        const dataTransfer = new DataTransfer();
+        selectedFiles.forEach(fileObj => {
+            dataTransfer.items.add(fileObj.file);
+        });
+        fileInput.files = dataTransfer.files;
+    }
+
+    // 费用分摊计算
+    function updateSplitPreview() {
+        const amount = parseFloat(amountInput.value) || 0;
+        const selectedParticipants = Array.from(document.querySelectorAll('input[name="participants"]:checked'));
+
+        if (amount === 0 || selectedParticipants.length === 0) {
+            splitPreview.innerHTML = '<p class="text-muted text-center">请先选择参与者和输入金额</p>';
+            return;
+        }
+
+        const splitAmount = (amount / selectedParticipants.length).toFixed(2);
+        let html = `<div class="d-flex justify-content-between align-items-center mb-3">
+            <strong>总金额：¥${amount.toFixed(2)}</strong>
+            <strong>每人应付：¥${splitAmount}</strong>
+        </div>`;
+
+        selectedParticipants.forEach(checkbox => {
+            const label = document.querySelector(`label[for="${checkbox.id}"]`);
+            const userName = label.textContent.trim().replace('付款人', '');
+            const isPayer = checkbox.value == '{{ bill.payer_id }}';
+
+            html += `<div class="participant-item ${isPayer ? 'payer' : ''}">
+                <span>${userName} ${isPayer ? '(付款人)' : ''}</span>
+                <span class="badge ${isPayer ? 'bg-primary' : 'bg-secondary'}">
+                    ${isPayer ? '已付款' : '¥' + splitAmount}
+                </span>
+            </div>`;
+        });
+
+        splitPreview.innerHTML = html;
+    }
+
+    // 绑定事件监听器
+    amountInput.addEventListener('input', updateSplitPreview);
+    participantCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSplitPreview);
+    });
+
+    // 账单类型选择处理
+    const billTypeRadios = document.querySelectorAll('input[name="bill_type"]');
+    const descriptionInput = document.getElementById('description');
+
+    billTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            if (this.value !== 'other') {
+                const typeMap = {
+                    'water': '水费',
+                    'electricity': '电费',
+                    'gas': '燃气费',
+                    'trash': '垃圾费',
+                    'internet': '网费',
+                    'shopping': '购物',
+                    'food': '餐饮',
+                    'transportation': '交通'
+                };
+                descriptionInput.value = typeMap[this.value] || this.value;
+            } else {
+                descriptionInput.focus();
+            }
+        });
+    });
+
+    // 初始化时更新分摊预览
+    updateSplitPreview();
+});
+
+// 删除现有凭证文件
+function deleteExistingReceipt(receiptId, filename) {
+    if (!confirm(`确定要删除凭证文件 "${filename}" 吗？此操作无法撤销。`)) {
+        return;
+    }
+
+    fetch(`/api/delete_receipt/${receiptId}`, {
+        method: 'DELETE',
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 删除成功，移除UI中的文件项
+            const receiptElement = document.getElementById(`receipt-${receiptId}`);
+            if (receiptElement) {
+                receiptElement.remove();
+            }
+
+            // 检查是否还有其他凭证文件
+            const remainingReceipts = document.querySelectorAll('#existingReceipts .col-md-6');
+            if (remainingReceipts.length === 0) {
+                // 如果没有凭证文件了，隐藏整个现有凭证区域
+                const existingReceiptsSection = document.querySelector('#existingReceipts').closest('.mb-3');
+                if (existingReceiptsSection) {
+                    existingReceiptsSection.style.display = 'none';
+                }
+            }
+
+            alert('凭证文件删除成功！');
+        } else {
+            alert('删除失败：' + (data.error || '未知错误'));
+        }
+    })
+    .catch(error => {
+        console.error('删除请求失败:', error);
+        alert('删除请求失败，请检查网络连接');
+    });
+}
+</script>
+{% endblock %}

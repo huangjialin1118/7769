@@ -11,6 +11,9 @@ A Flask web application for managing and splitting bills between roommates with 
 - **Date Selection**: Choose actual bill dates for better tracking
 - **Real-time Calculation**: Automatic cost splitting with live preview
 - **Multi-participant**: Select which roommates to include in each bill
+- **Edit Bills**: Modify existing bills (creator-only permission)
+- **Delete Bills**: Remove bills with cascade deletion (creator-only permission)
+- **Permission Control**: Only bill creators can edit or delete their bills
 
 ### 📎 Receipt Management
 - **Multi-file Upload**: Upload multiple receipts per bill (images + PDFs)
@@ -51,6 +54,10 @@ A Flask web application for managing and splitting bills between roommates with 
 
 3. **Install dependencies**
    ```bash
+   # Option 1: Install from requirements.txt (recommended)
+   pip install -r requirements.txt
+
+   # Option 2: Install individually
    pip install flask flask-sqlalchemy flask-login werkzeug
    ```
 
@@ -67,6 +74,31 @@ A Flask web application for managing and splitting bills between roommates with 
    ```
    http://127.0.0.1:7769
    ```
+
+## 🌐 Network Access
+
+The application is configured to listen on all network interfaces (`host='0.0.0.0'`), allowing access from other devices on the same network.
+
+### Local Access
+```
+http://127.0.0.1:7769
+```
+
+### LAN Access from Other Devices
+```
+http://192.168.31.174:7769
+```
+*Replace with your actual IP address*
+
+### Access Requirements
+- Devices must be connected to the same WiFi/LAN
+- macOS firewall must allow Python to accept incoming connections
+- Application must be running
+
+### Find Your IP Address
+```bash
+ifconfig | grep 'inet ' | grep -v '127.0.0.1'
+```
 
 ## 👥 Default Users
 
@@ -98,6 +130,7 @@ The system comes with 4 pre-configured roommate accounts:
 │   ├── index.html        # Main dashboard
 │   ├── login.html        # Login page
 │   ├── add_bill.html     # Add bill form with file upload
+│   ├── edit_bill.html    # Edit bill form with file management
 │   └── dashboard.html    # Personal dashboard
 ├── static/               # Static assets
 │   ├── css/style.css    # Custom styles
@@ -150,11 +183,15 @@ The system comes with 4 pre-configured roommate accounts:
 - `GET /logout` - Logout user
 - `GET /add_bill` - Add bill form
 - `POST /add_bill` - Process new bill
+- `GET /edit_bill/<bill_id>` - Edit bill form (creator-only)
+- `POST /edit_bill/<bill_id>` - Process bill edit (creator-only)
+- `POST /delete_bill/<bill_id>` - Delete bill with cascade deletion (creator-only)
 - `GET /dashboard` - Personal dashboard
 - `GET /settle_individual/<bill_id>/<user_id>` - Toggle individual settlement
 - `GET /toggle_settlement/<bill_id>` - Toggle all settlements
 - `GET /api/debt_details` - Get debt information (JSON)
 - `GET /api/receipt/<bill_id>` - Get receipt information (JSON)
+- `DELETE /api/receipt/<receipt_id>` - Delete individual receipt file
 
 ## 🎯 Usage Guide
 
@@ -166,6 +203,16 @@ The system comes with 4 pre-configured roommate accounts:
 5. Upload receipt files (drag & drop supported)
 6. Review the cost split preview
 7. Submit the bill
+
+### Managing Bills
+1. **Edit Bill**: Click the "编辑" (Edit) button on bills you created
+   - Modify amount, date, description, and participants
+   - Add or remove receipt files
+   - Changes are saved with real-time preview
+2. **Delete Bill**: Click the "删除" (Delete) button on bills you created
+   - Confirmation dialog shows impact (settlements, receipts)
+   - Permanently removes bill, settlements, and all receipt files
+   - Only available to bill creators
 
 ### Managing Settlements
 1. From the dashboard, find the bill
@@ -206,17 +253,70 @@ mkdir -p static/uploads/receipts
 chmod 755 static/uploads/receipts
 ```
 
+### Network Access Issues
+```bash
+# Check firewall status (macOS)
+sudo pfctl -s info
+
+# If connection refused from other devices:
+# 1. Check macOS System Preferences > Security & Privacy > Firewall
+# 2. Allow Python to accept incoming connections
+# 3. Verify devices are on same network
+# 4. Confirm IP address is correct
+```
+
 ## 🔄 Recent Updates
 
+- ✅ **Project Structure Flattened**: Moved from nested `roommate-bills/` to root `7769/` directory
+- ✅ **Network Access Added**: Configured `host='0.0.0.0'` for LAN access support
+- ✅ **Error Messages Improved**: Enhanced permission error messages for better user understanding
 - ✅ **Path Configuration Fixed**: Absolute path configuration ensures consistent operation regardless of execution directory
 - ✅ **Receipt File Access**: Fixed 404 error for receipt files by correcting upload route path handling
 - ✅ **Cross-IDE Compatibility**: Works seamlessly with VS Code, PyCharm, and other IDEs
+- ✅ **Bill Edit/Delete Features**: Added comprehensive bill management with permission control
+- ✅ **Critical File Deletion Bug Fix**: Fixed orphaned receipt files issue during bill deletion
+- ✅ **Permission System**: Only bill creators can edit/delete their bills
+- ✅ **Cascade Deletion**: Properly delete all associated files and database records
 - ✅ Multi-file receipt upload with drag & drop
 - ✅ Real-time UI updates without page refresh
 - ✅ Enhanced bill type selection system
 - ✅ Improved modal receipt viewer
 - ✅ Fixed duplicate user issues
 - ✅ Added comprehensive debt tracking
+
+## 🔧 Latest Bug Fixes (2025-09-17)
+
+### Critical File Deletion Bug Fix
+**Issue**: When deleting bills, database records were correctly removed but actual receipt files remained on disk, causing storage waste.
+
+**Root Cause**:
+- Files uploaded to subdirectories: `/static/uploads/receipts/{bill_id}/filename`
+- Database only stores filename: `filename` (without subdirectory path)
+- Deletion logic used wrong path: `/static/uploads/receipts/filename` (missing bill_id subdirectory)
+
+**Solution**:
+```python
+# Before (incorrect)
+file_path = os.path.join(UPLOAD_FOLDER, receipt.filename)
+
+# After (correct)
+file_path = os.path.join(UPLOAD_FOLDER, str(bill_id), receipt.filename)
+```
+
+**Additional Improvements**:
+- Automatic cleanup of empty directories after bill deletion
+- Enhanced deletion logging for better debugging
+- Ensures complete cascade deletion integrity
+
+### Permission Control Enhancement
+- Only bill creators (payers) can edit and delete bills
+- Frontend UI dynamically shows edit/delete buttons based on permissions
+- Backend enforces permission validation to prevent malicious operations
+
+### User Experience Improvements
+- Confirmation dialog before bill deletion showing impact statistics
+- Edit page supports real-time file management
+- More detailed success/error message feedback
 
 ## 🤝 Contributing
 

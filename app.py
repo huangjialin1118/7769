@@ -572,6 +572,163 @@ def uploaded_file(filename):
         print(f"文件未找到错误: {e}")
         return f"文件未找到: {filename}", 404
 
+@app.route('/delete_bill/<int:bill_id>', methods=['POST'])
+@login_required
+def delete_bill(bill_id):
+    """
+    删除账单
+    只有账单创建者可以删除账单
+    """
+    bill = Bill.query.get_or_404(bill_id)
+
+    # 权限检查：只有账单创建者可以删除
+    if bill.payer_id != current_user.id:
+        return jsonify({'error': '只有账单创建者可以删除账单'}), 403
+
+    try:
+        # 获取需要删除的文件信息（用于确认消息）
+        receipts_count = len(bill.receipts)
+        settlements_count = len(bill.settlements)
+
+        # 删除关联的凭证文件（从文件系统）
+        for receipt in bill.receipts:
+            # 使用账单ID创建正确的文件路径（文件存储在子目录中）
+            file_path = os.path.join(UPLOAD_FOLDER, str(bill_id), receipt.filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"已删除凭证文件: {file_path}")
+
+        # 删除账单文件夹（如果为空）
+        bill_folder = os.path.join(UPLOAD_FOLDER, str(bill_id))
+        try:
+            if os.path.exists(bill_folder) and not os.listdir(bill_folder):
+                os.rmdir(bill_folder)
+                print(f"已删除空目录: {bill_folder}")
+        except OSError:
+            pass  # 目录不为空或其他问题，忽略
+
+        # 删除账单（级联删除会自动删除settlements和receipts记录）
+        db.session.delete(bill)
+        db.session.commit()
+
+        flash(f'账单已删除！同时删除了 {settlements_count} 个结算记录和 {receipts_count} 个凭证文件。', 'success')
+        return jsonify({'success': True, 'message': '账单删除成功'})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"删除账单时发生错误: {e}")
+        return jsonify({'error': '删除失败，请稍后重试'}), 500
+
+@app.route('/edit_bill/<int:bill_id>', methods=['GET', 'POST'])
+@login_required
+def edit_bill(bill_id):
+    """
+    编辑账单
+    只有账单创建者可以编辑账单
+    """
+    bill = Bill.query.get_or_404(bill_id)
+
+    # 权限检查：只有账单创建者可以编辑
+    if bill.payer_id != current_user.id:
+        flash('只有账单创建者可以编辑账单', 'error')
+        return redirect(url_for('index'))
+
+    users = User.query.all()
+
+    if request.method == 'POST':
+        try:
+            old_amount = bill.amount
+            old_participants = bill.participants
+
+            # 更新账单信息
+            bill.description = request.form['description']
+            bill.amount = float(request.form['amount'])
+            bill.date = datetime.strptime(request.form['date'], '%Y-%m-%d')
+
+            # 处理参与者
+            selected_participants = request.form.getlist('participants')
+            bill.participants = ','.join(selected_participants)
+
+            # 检查是否修改了影响结算的字段（金额或参与者）
+            amount_changed = bill.amount != old_amount
+            participants_changed = bill.participants != old_participants
+
+            if amount_changed or participants_changed:
+                # 删除所有现有的结算记录
+                Settlement.query.filter_by(bill_id=bill.id).delete()
+                bill.is_settled = False
+                flash('由于修改了金额或参与者，已清除原有结算记录，需要重新结算。', 'warning')
+
+            # 处理新上传的文件
+            uploaded_files = request.files.getlist('receipts')
+            for file in uploaded_files:
+                if file and file.filename and allowed_file(file.filename):
+                    # 确保上传目录存在
+                    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+                    # 生成安全的文件名
+                    filename = secure_filename_with_timestamp(file.filename)
+                    file_path = os.path.join(UPLOAD_FOLDER, filename)
+                    file.save(file_path)
+
+                    # 确定文件类型
+                    file_type = 'pdf' if filename.lower().endswith('.pdf') else 'image'
+
+                    # 获取文件大小
+                    file_size = os.path.getsize(file_path)
+
+                    # 保存到数据库
+                    receipt = Receipt(
+                        bill_id=bill.id,
+                        filename=filename,
+                        file_type=file_type,
+                        file_size=file_size
+                    )
+                    db.session.add(receipt)
+
+            db.session.commit()
+            flash('账单修改成功！', 'success')
+            return redirect(url_for('index'))
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"修改账单时发生错误: {e}")
+            flash('修改失败，请检查输入信息', 'error')
+
+    return render_template('edit_bill.html', bill=bill, users=users)
+
+@app.route('/api/delete_receipt/<int:receipt_id>', methods=['DELETE'])
+@login_required
+def delete_receipt(receipt_id):
+    """
+    删除单个凭证文件
+    只有账单创建者可以删除凭证
+    """
+    receipt = Receipt.query.get_or_404(receipt_id)
+    bill = receipt.bill
+
+    # 权限检查：只有账单创建者可以删除凭证
+    if bill.payer_id != current_user.id:
+        return jsonify({'error': '只有账单创建者可以删除凭证'}), 403
+
+    try:
+        # 删除文件系统中的文件
+        file_path = os.path.join(UPLOAD_FOLDER, receipt.filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"已删除凭证文件: {file_path}")
+
+        # 删除数据库记录
+        db.session.delete(receipt)
+        db.session.commit()
+
+        return jsonify({'success': True, 'message': '凭证删除成功'})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"删除凭证时发生错误: {e}")
+        return jsonify({'error': '删除失败，请稍后重试'}), 500
+
 if __name__ == '__main__':
     with app.app_context():
         init_database()

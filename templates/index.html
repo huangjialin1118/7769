@@ -28,7 +28,26 @@
                                             <strong>每人应付：</strong>¥{{ "%.2f"|format(bill.get_split_amount()) }}
                                         </p>
                                     </div>
-                                    <div>
+                                    <div class="d-flex flex-column align-items-end">
+                                        <!-- 操作按钮（只对账单创建者显示） -->
+                                        {% if current_user.id == bill.payer_id %}
+                                            <div class="mb-2">
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <a href="{{ url_for('edit_bill', bill_id=bill.id) }}"
+                                                       class="btn btn-outline-primary btn-sm"
+                                                       title="编辑账单">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </a>
+                                                    <button class="btn btn-outline-danger btn-sm"
+                                                            title="删除账单"
+                                                            onclick="deleteBill({{ bill.id }}, '{{ bill.description }}', {{ bill.receipts|length }}, {{ bill.settlements|length }})">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        {% endif %}
+
+                                        <!-- 状态徽章 -->
                                         {% if bill.is_settled %}
                                             <span id="bill-{{ bill.id }}-status" class="badge bg-success">全部结算</span>
                                         {% elif non_payer_settled > 0 and non_payer_settled < non_payer_total %}
@@ -288,6 +307,45 @@
                     <!-- 动态生成下载按钮 -->
                 </div>
                 </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除账单确认对话框 -->
+<div class="modal fade" id="deleteBillModal" tabindex="-1" aria-labelledby="deleteBillModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteBillModalLabel">
+                    <i class="bi bi-exclamation-triangle"></i> 删除账单确认
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>警告：</strong>此操作无法撤销！
+                </div>
+                <p>您确定要删除以下账单吗？</p>
+                <div class="card border-danger">
+                    <div class="card-body">
+                        <h6 class="card-title text-danger" id="deleteBillName">账单名称</h6>
+                        <p class="card-text">
+                            <strong>将同时删除：</strong>
+                        </p>
+                        <ul class="list-unstyled mb-0">
+                            <li><i class="bi bi-arrow-right text-danger"></i> <span id="deleteReceiptsCount">0</span> 个凭证文件</li>
+                            <li><i class="bi bi-arrow-right text-danger"></i> <span id="deleteSettlementsCount">0</span> 个结算记录</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn" onclick="confirmDeleteBill()">
+                    <i class="bi bi-trash"></i> 确认删除
+                </button>
             </div>
         </div>
     </div>
@@ -1171,5 +1229,72 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// 全局变量存储待删除的账单ID
+let billToDelete = null;
+
+// 删除账单函数
+function deleteBill(billId, billName, receiptsCount, settlementsCount) {
+    // 存储账单ID
+    billToDelete = billId;
+
+    // 填充模态框内容
+    document.getElementById('deleteBillName').textContent = billName;
+    document.getElementById('deleteReceiptsCount').textContent = receiptsCount;
+    document.getElementById('deleteSettlementsCount').textContent = settlementsCount;
+
+    // 显示确认对话框
+    const deleteModal = new bootstrap.Modal(document.getElementById('deleteBillModal'));
+    deleteModal.show();
+}
+
+// 确认删除账单
+function confirmDeleteBill() {
+    if (!billToDelete) {
+        alert('删除操作异常，请刷新页面重试');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('confirmDeleteBtn');
+    const originalText = confirmBtn.innerHTML;
+
+    // 显示加载状态
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 删除中...';
+
+    // 发送删除请求
+    fetch(`/delete_bill/${billToDelete}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 删除成功，关闭模态框并刷新页面
+            const deleteModal = bootstrap.Modal.getInstance(document.getElementById('deleteBillModal'));
+            deleteModal.hide();
+
+            // 显示成功消息并刷新页面
+            alert('账单删除成功！');
+            window.location.reload();
+        } else {
+            // 删除失败，显示错误信息
+            alert('删除失败：' + (data.error || '未知错误'));
+        }
+    })
+    .catch(error => {
+        console.error('删除请求失败:', error);
+        alert('删除请求失败，请检查网络连接');
+    })
+    .finally(() => {
+        // 恢复按钮状态
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalText;
+        billToDelete = null;
+    });
+}
 </script>
 {% endblock %}
