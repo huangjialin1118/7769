@@ -1,12 +1,22 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from models import db, User, Bill, Settlement, Receipt
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 import os
+import secrets
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-change-this'
+
+# 安全的SECRET_KEY生成
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
+
+# 会话配置 - 确保每个设备独立
+app.config['SESSION_COOKIE_NAME'] = 'roommate_session'
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # 防止JS访问
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF保护
+app.config['SESSION_COOKIE_SECURE'] = False  # 生产环境应设为True(HTTPS)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # 7天有效期
 
 # 强制使用项目目录内的绝对路径（解决IDE运行目录问题）
 # 数据库路径 - 强制在项目目录内
@@ -30,6 +40,10 @@ db.init_app(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+# Flask-Login配置 - 多设备支持
+login_manager.remember_cookie_duration = timedelta(days=30)  # 记住我30天
+login_manager.session_protection = 'strong'  # 强会话保护
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -93,14 +107,18 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        remember = request.form.get('remember', False)
 
         user = User.query.filter_by(username=username).first()
 
         if user and user.check_password(password):
-            login_user(user)
-            return redirect(url_for('index'))
+            # remember=True时，关闭浏览器后仍保持登录
+            login_user(user, remember=bool(remember))
+            flash(f'欢迎回来，{user.display_name}！', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
         else:
-            flash('用户名或密码错误')
+            flash('用户名或密码错误', 'error')
 
     # 获取所有用户用于登录选择
     users = User.query.all()
