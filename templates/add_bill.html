@@ -160,16 +160,28 @@
                         </div>
 
                         <!-- 其他室友选择 -->
-                        <div class="row">
+                        <div class="row g-3">
                             {% for user in users %}
                                 {% if user.id != current_user.id %}
-                                    <div class="col-md-6 mb-2">
-                                        <div class="form-check">
-                                            <input class="form-check-input participant-checkbox" type="checkbox"
-                                                   name="participants" value="{{ user.id }}" id="user{{ user.id }}">
-                                            <label class="form-check-label" for="user{{ user.id }}">
-                                                {{ user.display_name }}
-                                            </label>
+                                    <div class="col-md-6 col-lg-4">
+                                        <!-- 隐藏的checkbox，保持原有表单逻辑 -->
+                                        <input class="form-check-input participant-checkbox d-none" type="checkbox"
+                                               name="participants" value="{{ user.id }}" id="user{{ user.id }}">
+
+                                        <!-- 可点击的卡片 -->
+                                        <div class="participant-card card h-100 border-2 cursor-pointer user-select-none"
+                                             data-user-id="{{ user.id }}"
+                                             onclick="toggleParticipant({{ user.id }})">
+                                            <div class="card-body text-center p-3">
+                                                <div class="participant-avatar mb-2">
+                                                    <i class="bi bi-person-circle fs-1 text-muted"></i>
+                                                </div>
+                                                <h6 class="card-title mb-2">{{ user.display_name }}</h6>
+                                                <div class="selection-indicator">
+                                                    <i class="bi bi-check-circle-fill text-success" style="display: none;"></i>
+                                                    <small class="text-muted selection-text">点击选择</small>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 {% endif %}
@@ -485,5 +497,50 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始计算
     updateSplitCalculation();
 });
+
+// 切换参与者选择状态
+function toggleParticipant(userId) {
+    const checkbox = document.getElementById(`user${userId}`);
+    const card = document.querySelector(`[data-user-id="${userId}"]`);
+    const checkIcon = card.querySelector('.bi-check-circle-fill');
+    const selectionText = card.querySelector('.selection-text');
+    const avatar = card.querySelector('.bi-person-circle');
+
+    // 切换checkbox状态
+    checkbox.checked = !checkbox.checked;
+
+    // 更新卡片样式
+    if (checkbox.checked) {
+        // 选中状态
+        card.classList.add('border-success', 'bg-light');
+        card.classList.remove('border-secondary');
+        checkIcon.style.display = 'inline-block';
+        selectionText.textContent = '已选择';
+        selectionText.classList.remove('text-muted');
+        selectionText.classList.add('text-success');
+        avatar.classList.remove('text-muted');
+        avatar.classList.add('text-success');
+
+        // 添加选中动画
+        card.style.transform = 'scale(0.98)';
+        setTimeout(() => {
+            card.style.transform = 'scale(1)';
+        }, 150);
+    } else {
+        // 未选中状态
+        card.classList.remove('border-success', 'bg-light');
+        card.classList.add('border-secondary');
+        checkIcon.style.display = 'none';
+        selectionText.textContent = '点击选择';
+        selectionText.classList.add('text-muted');
+        selectionText.classList.remove('text-success');
+        avatar.classList.add('text-muted');
+        avatar.classList.remove('text-success');
+    }
+
+    // 触发分摊计算更新
+    const event = new Event('change');
+    checkbox.dispatchEvent(event);
+}
 </script>
 {% endblock %}

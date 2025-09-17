@@ -76,14 +76,36 @@ class Bill(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # 关系
-    settlements = db.relationship('Settlement', backref='bill', lazy=True)
+    settlements = db.relationship('Settlement', backref='bill', lazy=True, cascade='all, delete-orphan')
     receipts = db.relationship('Receipt', backref='bill', lazy=True, cascade='all, delete-orphan')
 
     def get_participants_list(self):
         """返回参与人ID列表"""
-        if self.participants:
-            return [int(x) for x in self.participants.split(',') if x.strip()]
-        return []
+        if not self.participants:
+            return []
+
+        participant_ids = []
+        for x in self.participants.split(','):
+            x = x.strip()
+            if not x:
+                continue
+
+            # 尝试转换为整数
+            try:
+                participant_ids.append(int(x))
+            except ValueError:
+                # 如果转换失败，可能是用户名，尝试通过用户名查找用户ID
+                try:
+                    user = User.query.filter_by(username=x).first()
+                    if user:
+                        participant_ids.append(user.id)
+                        print(f"警告: 参与者字段包含用户名 '{x}'，已自动转换为用户ID {user.id}")
+                    else:
+                        print(f"错误: 无法找到用户名为 '{x}' 的用户")
+                except Exception as e:
+                    print(f"错误: 处理参与者 '{x}' 时发生异常: {e}")
+
+        return participant_ids
 
     def get_split_amount(self):
         """计算每人应付金额"""

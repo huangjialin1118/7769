@@ -123,7 +123,7 @@
                                 <!-- 整体操作按钮 -->
                                 <div class="mt-3 pt-2 border-top">
                                     <!-- 查看凭证按钮 -->
-                                    {% if bill.receipt_filename %}
+                                    {% if bill.receipts and bill.receipts|length > 0 %}
                                         <button type="button" class="btn btn-sm btn-info me-1"
                                                 onclick="viewReceipt({{ bill.id }})">
                                             <i class="bi bi-file-earmark-text"></i> 查看凭证
@@ -258,7 +258,7 @@
 </div>
 
 <!-- 凭证查看模态框 -->
-<div class="modal fade" id="receiptModal" tabindex="-1" aria-labelledby="receiptModalLabel" aria-hidden="true">
+<div class="modal" id="receiptModal" tabindex="-1" aria-labelledby="receiptModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
@@ -284,7 +284,7 @@
                 </ul>
 
                 <!-- 凭证显示区域 -->
-                <div id="receiptContent" class="receipt-container tab-content">
+                <div id="receiptContent" class="receipt-container">
                     <!-- 动态填充凭证内容 -->
                 </div>
 
@@ -313,8 +313,8 @@
 </div>
 
 <!-- 删除账单确认对话框 -->
-<div class="modal fade" id="deleteBillModal" tabindex="-1" aria-labelledby="deleteBillModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+<div class="modal" id="deleteBillModal" tabindex="-1" aria-labelledby="deleteBillModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header bg-danger text-white">
                 <h5 class="modal-title" id="deleteBillModalLabel">
@@ -384,17 +384,7 @@
     border-left: 4px solid #0d6efd;
 }
 
-/* 模态框优化 */
-.modal-xl .modal-body {
-    max-height: 80vh;
-    overflow-y: auto;
-}
-
-@media (min-width: 1200px) {
-    .modal-xl {
-        max-width: 90%;
-    }
-}
+/* 删除自定义modal样式，使用Bootstrap默认 */
 
 /* 全屏按钮样式 */
 .btn-light {
@@ -408,15 +398,7 @@
     transform: scale(1.1);
 }
 
-/* 全屏模式下的优化 */
-.modal-fullscreen .modal-body {
-    max-height: calc(100vh - 120px);
-    overflow-y: auto;
-}
-
-.modal-fullscreen .receipt-container {
-    max-height: calc(100vh - 200px);
-}
+/* 移除全屏模式自定义样式，使用Bootstrap默认 */
 </style>
 
 <script>
@@ -425,15 +407,12 @@ function viewReceipt(billId) {
     console.log('查看凭证：账单ID=' + billId);
 
     try {
-        // 获取或创建模态框实例（避免重复创建）
-        const modalElement = document.getElementById('receiptModal');
-        if (!modalElement) {
-            console.error('模态框元素不存在');
-            alert('页面加载错误，请刷新页面重试');
+        // 使用安全的模态框管理
+        const modal = safeShowModal('receiptModal');
+        if (!modal) {
+            alert('无法加载凭证查看窗口，请刷新页面重试');
             return;
         }
-
-        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
 
         // 检查并重置显示状态
         const loadingElement = document.getElementById('receiptLoading');
@@ -459,16 +438,20 @@ function viewReceipt(billId) {
         infoElement.innerHTML = '';
         contentElement.innerHTML = '';
 
-        // 显示模态框
+        // 先显示模态框（显示加载中）
         modal.show();
 
+        // 添加时间戳防止缓存
+        const timestamp = new Date().getTime();
+
         // 发送AJAX请求获取凭证信息
-        fetch(`/api/receipt/${billId}`, {
+        fetch(`/api/receipt/${billId}?_t=${timestamp}`, {
             method: 'GET',
             credentials: 'same-origin',  // 包含cookie
             headers: {
                 'Accept': 'application/json',
-                'Cache-Control': 'no-cache'
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
             }
         })
         .then(response => {
@@ -491,7 +474,10 @@ function viewReceipt(billId) {
 
             // 隐藏加载动画
             if (loadingElement) loadingElement.style.display = 'none';
-            if (contentElement) contentElement.style.display = 'block';
+
+            // 确保contentElement始终是block，移除tab-content类
+            contentElement.style.display = 'block';
+            contentElement.className = 'receipt-container';  // 重置类名
 
             // 显示账单信息
             if (infoElement) {
@@ -530,7 +516,10 @@ function viewReceipt(billId) {
             downloadButtonsContainer.innerHTML = '';
 
             if (receipts.length === 0) {
-                contentElement.innerHTML = '<div class="alert alert-warning">该账单没有上传凭证</div>';
+                // 没有凭证 - 创建包装器
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = '<div class="alert alert-warning">该账单没有上传凭证</div>';
+                contentElement.appendChild(wrapper);
                 return;
             }
 
@@ -540,21 +529,31 @@ function viewReceipt(billId) {
                 const receipt = receipts[0];
                 const staticUrl = `/${receipt.filepath}`;
 
+                // 创建包装器
+                const wrapper = document.createElement('div');
+
                 if (receipt.file_type === 'image') {
-                    contentElement.innerHTML = `
+                    wrapper.innerHTML = `
                         <div class="text-center">
                             <img src="${staticUrl}" alt="账单凭证" class="img-fluid"
                                  onerror="this.onerror=null; this.src='/static/img/no-image.png'; this.alt='凭证加载失败'">
                         </div>
                     `;
                 } else if (receipt.file_type === 'pdf') {
-                    contentElement.innerHTML = `
-                        <embed src="${staticUrl}" type="application/pdf" width="100%" style="height: 70vh; min-height: 600px;">
+                    // 添加时间戳确保每次都是新的URL，避免embed缓存问题
+                    const pdfUrl = `${staticUrl}?t=${new Date().getTime()}`;
+                    wrapper.innerHTML = `
+                        <iframe src="${pdfUrl}"
+                                width="100%"
+                                style="height: 70vh; min-height: 600px; border: none;">
+                        </iframe>
                         <div class="mt-3 text-center text-muted">
                             <small>如果PDF无法显示，请点击下方下载按钮查看</small>
                         </div>
                     `;
                 }
+
+                contentElement.appendChild(wrapper);
 
                 // 添加下载按钮
                 downloadButtonsContainer.innerHTML = `
@@ -568,6 +567,10 @@ function viewReceipt(billId) {
             } else {
                 // 多个文件，显示标签页
                 tabsElement.style.display = 'flex';
+
+                // 创建tab内容容器
+                const tabContentDiv = document.createElement('div');
+                tabContentDiv.className = 'tab-content';
 
                 receipts.forEach((receipt, index) => {
                     const isActive = index === 0;
@@ -602,16 +605,25 @@ function viewReceipt(billId) {
                             </div>
                         `;
                     } else if (receipt.file_type === 'pdf') {
+                        // 添加时间戳确保每次都是新的URL，避免embed缓存问题
+                        const pdfUrl = `${staticUrl}?t=${new Date().getTime()}`;
                         paneDiv.innerHTML = `
-                            <embed src="${staticUrl}" type="application/pdf" width="100%" style="height: 70vh; min-height: 600px;">
+                            <iframe src="${pdfUrl}"
+                                    width="100%"
+                                    style="height: 70vh; min-height: 600px; border: none;">
+                            </iframe>
                             <div class="mt-3 text-center text-muted">
                                 <small>如果PDF无法显示，请点击下方下载按钮查看</small>
                             </div>
                         `;
                     }
 
-                    contentElement.appendChild(paneDiv);
+                    // 添加到tab内容容器而不是直接添加到contentElement
+                    tabContentDiv.appendChild(paneDiv);
                 });
+
+                // 将tab内容容器添加到主容器
+                contentElement.appendChild(tabContentDiv);
 
                 // 添加批量下载按钮和单独查看选项
                 let buttonsHtml = '';
@@ -630,6 +642,32 @@ function viewReceipt(billId) {
                         buttonsHtml += `
                             <li>
                                 <a class="dropdown-item" href="${staticUrl}" download="${receipt.filename}">
+                                    ${icon} ${receipt.filename}
+                                </a>
+                            </li>
+                        `;
+                    });
+
+                    buttonsHtml += `
+                            </ul>
+                        </div>
+                    `;
+
+                    // 添加新窗口打开的下拉菜单
+                    buttonsHtml += `
+                        <div class="btn-group ms-2" role="group">
+                            <button type="button" class="btn btn-info dropdown-toggle" data-bs-toggle="dropdown">
+                                <i class="bi bi-box-arrow-up-right"></i> 新窗口打开
+                            </button>
+                            <ul class="dropdown-menu">
+                    `;
+
+                    receipts.forEach((receipt, index) => {
+                        const staticUrl = `/${receipt.filepath}`;
+                        const icon = receipt.file_type === 'pdf' ? '📄' : '🖼️';
+                        buttonsHtml += `
+                            <li>
+                                <a class="dropdown-item" href="${staticUrl}" target="_blank">
                                     ${icon} ${receipt.filename}
                                 </a>
                             </li>
@@ -693,12 +731,12 @@ function toggleFullscreen() {
     if (modalDialog.classList.contains('modal-fullscreen')) {
         // 退出全屏
         modalDialog.classList.remove('modal-fullscreen');
-        modalDialog.classList.add('modal-xl');
+        modalDialog.classList.add('modal-xl', 'modal-dialog-centered', 'modal-dialog-scrollable');
         fullscreenIcon.classList.remove('bi-arrows-angle-contract');
         fullscreenIcon.classList.add('bi-arrows-fullscreen');
     } else {
         // 进入全屏
-        modalDialog.classList.remove('modal-xl');
+        modalDialog.classList.remove('modal-xl', 'modal-dialog-centered', 'modal-dialog-scrollable');
         modalDialog.classList.add('modal-fullscreen');
         fullscreenIcon.classList.remove('bi-arrows-fullscreen');
         fullscreenIcon.classList.add('bi-arrows-angle-contract');
@@ -1222,7 +1260,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const modalDialog = document.querySelector('#receiptModal .modal-dialog');
             if (modalDialog.classList.contains('modal-fullscreen')) {
                 modalDialog.classList.remove('modal-fullscreen');
-                modalDialog.classList.add('modal-xl');
+                modalDialog.classList.add('modal-xl', 'modal-dialog-centered', 'modal-dialog-scrollable');
                 document.getElementById('fullscreenIcon').classList.remove('bi-arrows-angle-contract');
                 document.getElementById('fullscreenIcon').classList.add('bi-arrows-fullscreen');
             }
@@ -1235,17 +1273,36 @@ let billToDelete = null;
 
 // 删除账单函数
 function deleteBill(billId, billName, receiptsCount, settlementsCount) {
-    // 存储账单ID
-    billToDelete = billId;
+    try {
+        // 存储账单ID
+        billToDelete = billId;
 
-    // 填充模态框内容
-    document.getElementById('deleteBillName').textContent = billName;
-    document.getElementById('deleteReceiptsCount').textContent = receiptsCount;
-    document.getElementById('deleteSettlementsCount').textContent = settlementsCount;
+        // 填充模态框内容
+        const billNameEl = document.getElementById('deleteBillName');
+        const receiptsCountEl = document.getElementById('deleteReceiptsCount');
+        const settlementsCountEl = document.getElementById('deleteSettlementsCount');
 
-    // 显示确认对话框
-    const deleteModal = new bootstrap.Modal(document.getElementById('deleteBillModal'));
-    deleteModal.show();
+        if (!billNameEl || !receiptsCountEl || !settlementsCountEl) {
+            throw new Error('模态框元素缺失');
+        }
+
+        billNameEl.textContent = billName;
+        receiptsCountEl.textContent = receiptsCount;
+        settlementsCountEl.textContent = settlementsCount;
+
+        // 使用安全的模态框管理
+        const deleteModal = safeShowModal('deleteBillModal');
+        if (deleteModal) {
+            deleteModal.show();
+        }
+    } catch (error) {
+        console.error('删除账单模态框错误:', error);
+        // 降级到简单确认
+        if (confirm(`确定要删除账单 "${billName}" 吗？此操作无法撤销！`)) {
+            // 直接调用删除确认函数
+            confirmDeleteBill();
+        }
+    }
 }
 
 // 确认删除账单

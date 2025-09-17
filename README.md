@@ -9,7 +9,8 @@ A Flask web application for managing and splitting bills between roommates with 
 ### 📊 Bill Management
 - **Smart Bill Types**: Predefined categories (utilities, groceries, food, etc.) with custom option
 - **Date Selection**: Choose actual bill dates for better tracking
-- **Real-time Calculation**: Automatic cost splitting with live preview
+- **Card-based Selection**: Modern participant selection interface with intuitive user cards and real-time visual feedback
+- **Real-time Calculation**: Automatic cost splitting with live preview and participant status display
 - **Multi-participant**: Select which roommates to include in each bill
 - **Edit Bills**: Modify existing bills (creator-only permission)
 - **Delete Bills**: Remove bills with cascade deletion (creator-only permission)

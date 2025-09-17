@@ -112,20 +112,40 @@
                     <!-- 参与者选择 -->
                     <div class="mb-3">
                         <label class="form-label">选择参与者</label>
-                        <div class="row g-2">
+                        <div class="row g-3">
                             {% set current_participants = bill.get_participants_list() %}
                             {% for user in users %}
-                            <div class="col-md-6">
-                                <div class="form-check">
-                                    <input class="form-check-input participant-checkbox" type="checkbox"
-                                           name="participants" value="{{ user.id }}" id="user_{{ user.id }}"
-                                           {% if user.id in current_participants %}checked{% endif %}>
-                                    <label class="form-check-label" for="user_{{ user.id }}">
-                                        {{ user.display_name }}
-                                        {% if user.id == bill.payer_id %}
-                                            <span class="badge bg-primary">付款人</span>
-                                        {% endif %}
-                                    </label>
+                            <div class="col-md-6 col-lg-4">
+                                <!-- 隐藏的checkbox，保持原有表单逻辑 -->
+                                <input class="form-check-input participant-checkbox d-none" type="checkbox"
+                                       name="participants" value="{{ user.id }}" id="user_{{ user.id }}"
+                                       data-username="{{ user.display_name }}"
+                                       {% if user.id in current_participants %}checked{% endif %}>
+
+                                <!-- 可点击的卡片 -->
+                                <div class="participant-card card h-100 border-2 cursor-pointer user-select-none
+                                            {% if user.id in current_participants %}border-success bg-light{% else %}border-secondary{% endif %}"
+                                     data-user-id="{{ user.id }}"
+                                     onclick="toggleParticipantEdit({{ user.id }})">
+                                    <div class="card-body text-center p-3">
+                                        <div class="participant-avatar mb-2">
+                                            <i class="bi bi-person-circle fs-1 {% if user.id in current_participants %}text-success{% else %}text-muted{% endif %}"></i>
+                                        </div>
+                                        <h6 class="card-title mb-2">
+                                            {{ user.display_name }}
+                                            {% if user.id == bill.payer_id %}
+                                                <br><span class="badge bg-primary mt-1">付款人</span>
+                                            {% endif %}
+                                        </h6>
+                                        <div class="selection-indicator">
+                                            <i class="bi bi-check-circle-fill text-success"
+                                               style="display: {% if user.id in current_participants %}inline-block{% else %}none{% endif %};"></i>
+                                            <small class="selection-text
+                                                          {% if user.id in current_participants %}text-success{% else %}text-muted{% endif %}">
+                                                {% if user.id in current_participants %}已选择{% else %}点击选择{% endif %}
+                                            </small>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             {% endfor %}
@@ -426,8 +446,8 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>`;
 
         selectedParticipants.forEach(checkbox => {
-            const label = document.querySelector(`label[for="${checkbox.id}"]`);
-            const userName = label.textContent.trim().replace('付款人', '');
+            // 从 data-username 属性获取用户名
+            const userName = checkbox.getAttribute('data-username');
             const isPayer = checkbox.value == '{{ bill.payer_id }}';
 
             html += `<div class="participant-item ${isPayer ? 'payer' : ''}">
@@ -474,6 +494,50 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化时更新分摊预览
     updateSplitPreview();
 });
+
+// 切换参与者选择状态（编辑模式）
+function toggleParticipantEdit(userId) {
+    const checkbox = document.getElementById(`user_${userId}`);
+    const card = document.querySelector(`[data-user-id="${userId}"]`);
+    const avatar = card.querySelector('.participant-avatar i');
+    const checkIcon = card.querySelector('.bi-check-circle-fill');
+    const selectionText = card.querySelector('.selection-text');
+
+    // 检查是否是付款人（付款人不能取消选择）
+    const isPayer = userId == {{ bill.payer_id }};
+    if (isPayer && checkbox.checked) {
+        return; // 付款人不能取消选择
+    }
+
+    // 切换选择状态
+    checkbox.checked = !checkbox.checked;
+
+    // 更新卡片外观
+    if (checkbox.checked) {
+        // 选中状态
+        card.classList.remove('border-secondary');
+        card.classList.add('border-success', 'bg-light');
+        avatar.classList.remove('text-muted');
+        avatar.classList.add('text-success');
+        checkIcon.style.display = 'inline-block';
+        selectionText.textContent = '已选择';
+        selectionText.classList.remove('text-muted');
+        selectionText.classList.add('text-success');
+    } else {
+        // 未选中状态
+        card.classList.remove('border-success', 'bg-light');
+        card.classList.add('border-secondary');
+        avatar.classList.remove('text-success');
+        avatar.classList.add('text-muted');
+        checkIcon.style.display = 'none';
+        selectionText.textContent = '点击选择';
+        selectionText.classList.remove('text-success');
+        selectionText.classList.add('text-muted');
+    }
+
+    // 更新费用分摊预览
+    updateSplitPreview();
+}
 
 // 删除现有凭证文件
 function deleteExistingReceipt(receiptId, filename) {
