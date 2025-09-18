@@ -11,14 +11,29 @@
             </div>
             <div class="card-body">
                 <form method="POST">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">选择用户</label>
-                        <select class="form-select" id="username" name="username" required>
-                            <option value="">请选择...</option>
+                    <!-- 用户卡片选择 -->
+                    <div class="mb-4">
+                        <label class="form-label">选择用户</label>
+                        <div class="row g-3">
                             {% for user in users %}
-                                <option value="{{ user.username }}">{{ user.display_name }}</option>
+                            <div class="col-md-6">
+                                <div class="user-card card h-100 border-2 cursor-pointer"
+                                     data-username="{{ user.username }}"
+                                     onclick="selectUser('{{ user.username }}', {{ user.is_default_password|tojson }})">
+                                    <div class="card-body text-center p-3">
+                                        <div class="user-avatar mb-2">
+                                            <i class="bi bi-person-circle fs-1 text-muted"></i>
+                                        </div>
+                                        <h6 class="card-title mb-0">{{ user.display_name }}</h6>
+                                        <div class="selection-indicator">
+                                            <i class="bi bi-check"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             {% endfor %}
-                        </select>
+                        </div>
+                        <input type="hidden" id="username" name="username" required>
                     </div>
 
                     <div class="mb-3">
@@ -26,14 +41,19 @@
                         <input type="password" class="form-control" id="password" name="password" required placeholder="请输入密码">
                     </div>
 
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input type="checkbox" class="form-check-input" id="remember" name="remember" checked>
-                            <label class="form-check-label" for="remember">
-                                记住我（30天内免登录）
+                    <!-- 记住我开关 -->
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="form-label mb-0">记住我</span>
+                                <small class="text-muted d-block">30天内免登录</small>
+                            </div>
+                            <label class="custom-toggle">
+                                <input type="checkbox" id="remember" name="remember" checked>
+                                <span class="toggle-slider"></span>
                             </label>
                         </div>
-                        <small class="text-muted">适用于个人设备，公用设备请取消勾选</small>
+                        <small class="text-muted"><i class="bi bi-info-circle"></i> 适用于个人设备，公用设备请关闭</small>
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100">登录</button>
@@ -63,40 +83,45 @@
 </div>
 
 <script>
-// 当用户选择改变时，显示对应的重置密码选项和更新密码提示
-document.getElementById('username').addEventListener('change', function() {
+// 选择用户函数
+function selectUser(username, isDefaultPassword) {
+    // 清除所有选中状态
+    document.querySelectorAll('.user-card').forEach(card => {
+        card.classList.remove('selected');
+        card.querySelector('.user-avatar i').className = 'bi bi-person-circle fs-1 text-muted';
+    });
+
+    // 设置选中状态
+    const selectedCard = document.querySelector(`[data-username="${username}"]`);
+    selectedCard.classList.add('selected');
+    selectedCard.querySelector('.user-avatar i').className = 'bi bi-person-circle fs-1 text-primary';
+
+    // 设置隐藏输入值
+    document.getElementById('username').value = username;
+
+    // 更新密码提示
+    const passwordInput = document.getElementById('password');
+    if (isDefaultPassword) {
+        passwordInput.placeholder = '默认密码：password123';
+    } else {
+        passwordInput.placeholder = '请输入自定义密码';
+    }
+
     // 隐藏所有重置选项
     const resetOptions = document.querySelectorAll('[id^="reset-option-"]');
     resetOptions.forEach(option => {
         option.style.display = 'none';
     });
 
-    const passwordInput = document.getElementById('password');
-    const selectedUsername = this.value;
-
-    if (selectedUsername) {
-        // 找到对应的用户ID并显示重置选项，同时更新密码提示
-        {% for user in users %}
-            {% if user.needs_password_reset() %}
-            if (selectedUsername === '{{ user.username }}') {
-                document.getElementById('reset-option-{{ user.id }}').style.display = 'block';
-            }
-            {% endif %}
-
-            // 根据用户的密码状态更新placeholder
-            if (selectedUsername === '{{ user.username }}') {
-                {% if user.is_default_password %}
-                    passwordInput.placeholder = '默认密码：password123';
-                {% else %}
-                    passwordInput.placeholder = '请输入自定义密码';
-                {% endif %}
-            }
-        {% endfor %}
-    } else {
-        // 没有选中用户时恢复默认提示
-        passwordInput.placeholder = '请输入密码';
-    }
-});
+    // 显示对应的重置密码选项
+    {% for user in users %}
+        {% if user.needs_password_reset() %}
+        if (username === '{{ user.username }}') {
+            document.getElementById('reset-option-{{ user.id }}').style.display = 'block';
+        }
+        {% endif %}
+    {% endfor %}
+}
 </script>
 
 {% endblock %}
