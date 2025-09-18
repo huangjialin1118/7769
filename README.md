@@ -49,7 +49,7 @@ A Flask web application for managing and splitting bills between roommates with 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.12+
+- Python 3.6+ (compatible with Raspberry Pi and ARM architectures)
 - pip (Python package manager)
 
 ### Installation

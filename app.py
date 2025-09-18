@@ -6,6 +6,8 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import os
 import secrets
+import shutil
+import tempfile
 
 app = Flask(__name__)
 
@@ -97,6 +99,101 @@ def validate_password_strength(password):
     #     errors.append("密码必须包含特殊字符")
 
     return errors
+
+def get_disk_space():
+    """获取磁盘可用空间（MB）"""
+    statvfs = os.statvfs(app.root_path)
+    available_bytes = statvfs.f_bavail * statvfs.f_frsize
+    return available_bytes / (1024 * 1024)  # 转换为MB
+
+def check_sufficient_disk_space(required_size_mb):
+    """检查磁盘空间是否足够"""
+    # 获取最小空间要求配置（默认100MB）
+    min_space_mb = int(os.environ.get('MIN_DISK_SPACE_MB', 100))
+    available_mb = get_disk_space()
+
+    # 需要保留最小空间 + 上传文件大小
+    needed_mb = min_space_mb + required_size_mb
+
+    return available_mb >= needed_mb, available_mb, min_space_mb
+
+def estimate_files_size(files):
+    """估算文件总大小（MB）"""
+    total_size = 0
+    for file in files:
+        if file and hasattr(file, 'seek') and hasattr(file, 'tell'):
+            # 保存当前位置
+            current_pos = file.tell()
+            # 移动到文件末尾
+            file.seek(0, os.SEEK_END)
+            size = file.tell()
+            # 恢复原位置
+            file.seek(current_pos)
+            total_size += size
+    return total_size / (1024 * 1024)  # 转换为MB
+
+class FileUploadTransaction:
+    """文件上传事务管理器"""
+
+    def __init__(self, bill_id):
+        self.bill_id = bill_id
+        self.temp_dir = None
+        self.uploaded_files = []
+        self.database_objects = []
+
+    def __enter__(self):
+        """开始事务"""
+        # 创建临时目录
+        self.temp_dir = tempfile.mkdtemp(prefix=f'bill_{self.bill_id}_')
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """结束事务，如果有异常则回滚"""
+        if exc_type is not None:
+            # 发生异常，执行回滚
+            self.rollback()
+        else:
+            # 没有异常，提交事务
+            self.commit()
+
+        # 清理临时目录
+        if self.temp_dir and os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def save_file(self, file, filename):
+        """保存文件到临时目录"""
+        temp_path = os.path.join(self.temp_dir, filename)
+        file.save(temp_path)
+        self.uploaded_files.append((temp_path, filename))
+        return temp_path
+
+    def add_database_object(self, obj):
+        """添加数据库对象到事务"""
+        self.database_objects.append(obj)
+        db.session.add(obj)
+
+    def commit(self):
+        """提交事务 - 移动文件到最终位置"""
+        if not self.uploaded_files:
+            return
+
+        # 创建目标目录
+        bill_folder = os.path.join(UPLOAD_FOLDER, str(self.bill_id))
+        os.makedirs(bill_folder, exist_ok=True)
+
+        # 移动文件到最终位置
+        for temp_path, filename in self.uploaded_files:
+            final_path = os.path.join(bill_folder, filename)
+            shutil.move(temp_path, final_path)
+
+    def rollback(self):
+        """回滚事务 - 删除数据库对象"""
+        # 回滚数据库对象
+        for obj in self.database_objects:
+            if obj in db.session:
+                db.session.expunge(obj)
+
+        # 临时文件会在 __exit__ 中自动清理
 
 def log_login_attempt(username, user_id=None, success=True, failure_reason=None):
     """记录登录尝试"""
@@ -522,39 +619,56 @@ def add_bill():
             date=bill_date  # 使用用户选择的日期
         )
 
+        # 处理多文件上传 - 使用优化的事务系统
+        files = request.files.getlist('receipts')
+        valid_files = [f for f in files if f and f.filename != '' and allowed_file(f.filename)]
+
+        # 检查磁盘空间
+        if valid_files:
+            estimated_size_mb = estimate_files_size(valid_files)
+            sufficient, available_mb, min_space_mb = check_sufficient_disk_space(estimated_size_mb)
+
+            if not sufficient:
+                flash(f'磁盘空间不足！需要 {estimated_size_mb:.1f}MB，但只有 {available_mb:.1f}MB 可用空间（需保留 {min_space_mb}MB）', 'error')
+                return render_template('add_bill.html', users=User.query.all(), today=datetime.now().strftime('%Y-%m-%d'))
+
         # 先添加账单到数据库
         db.session.add(bill)
         db.session.flush()  # 获取bill.id但不提交
 
-        # 处理多文件上传
-        files = request.files.getlist('receipts')
-        for file in files:
-            if file and file.filename != '' and allowed_file(file.filename):
-                # 创建账单专属目录
-                bill_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(bill.id))
-                os.makedirs(bill_folder, exist_ok=True)
+        try:
+            # 使用事务管理器处理文件上传
+            with FileUploadTransaction(bill.id) as transaction:
+                for file in valid_files:
+                    # 生成安全文件名
+                    filename = secure_filename_with_timestamp(file.filename)
 
-                # 保存文件
-                filename = secure_filename_with_timestamp(file.filename)
-                filepath = os.path.join(bill_folder, filename)
-                file.save(filepath)
+                    # 保存到临时目录
+                    temp_path = transaction.save_file(file, filename)
 
-                # 创建Receipt记录
-                receipt = Receipt(
-                    bill_id=bill.id,
-                    filename=filename,
-                    file_type='pdf' if filename.lower().endswith('.pdf') else 'image',
-                    file_size=os.path.getsize(filepath)
-                )
-                db.session.add(receipt)
+                    # 创建Receipt记录
+                    receipt = Receipt(
+                        bill_id=bill.id,
+                        filename=filename,
+                        file_type='pdf' if filename.lower().endswith('.pdf') else 'image',
+                        file_size=os.path.getsize(temp_path)
+                    )
+                    transaction.add_database_object(receipt)
 
-                # 保留对旧字段的兼容（使用第一个文件）
-                if not bill.receipt_filename:
-                    bill.receipt_filename = filename
-                    bill.receipt_type = receipt.file_type
+                    # 保留对旧字段的兼容（使用第一个文件）
+                    if not bill.receipt_filename:
+                        bill.receipt_filename = filename
+                        bill.receipt_type = receipt.file_type
 
-        # 提交所有更改
-        db.session.commit()
+                # 如果到这里没有异常，提交数据库事务
+                db.session.commit()
+
+        except Exception as e:
+            # 回滚数据库事务
+            db.session.rollback()
+            app.logger.error(f"文件上传失败: {str(e)}")
+            flash(f'文件上传失败: {str(e)}', 'error')
+            return render_template('add_bill.html', users=User.query.all(), today=datetime.now().strftime('%Y-%m-%d'))
 
         flash(f'成功添加账单：{description} - ¥{amount}')
         return redirect(url_for('index'))
@@ -1099,6 +1213,155 @@ def delete_receipt(receipt_id):
         db.session.rollback()
         print(f"删除凭证时发生错误: {e}")
         return jsonify({'error': '删除失败，请稍后重试'}), 500
+
+# ===========================
+# 健康检查和监控端点
+# ===========================
+
+@app.route('/health')
+def health_check():
+    """系统健康检查端点"""
+    try:
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.4',
+            'checks': {}
+        }
+
+        # 检查数据库连接
+        try:
+            User.query.count()
+            health_status['checks']['database'] = {'status': 'ok', 'message': '数据库连接正常'}
+        except Exception as e:
+            health_status['checks']['database'] = {'status': 'error', 'message': f'数据库连接失败: {str(e)}'}
+            health_status['status'] = 'unhealthy'
+
+        # 检查磁盘空间
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage('.')
+            free_mb = free // (1024*1024)
+            total_mb = total // (1024*1024)
+            used_percent = round((used / total) * 100, 1)
+
+            health_status['checks']['disk_space'] = {
+                'status': 'ok' if free_mb > 100 else 'warning',
+                'free_mb': free_mb,
+                'total_mb': total_mb,
+                'used_percent': used_percent
+            }
+
+            if free_mb <= 50:
+                health_status['status'] = 'unhealthy'
+            elif free_mb <= 100:
+                health_status['status'] = 'degraded'
+
+        except Exception as e:
+            health_status['checks']['disk_space'] = {'status': 'error', 'message': f'磁盘检查失败: {str(e)}'}
+
+        # 检查上传目录权限
+        try:
+            test_file = os.path.join(UPLOAD_FOLDER, '.health_check')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            health_status['checks']['upload_directory'] = {'status': 'ok', 'message': '上传目录可写'}
+        except Exception as e:
+            health_status['checks']['upload_directory'] = {'status': 'error', 'message': f'上传目录不可写: {str(e)}'}
+            health_status['status'] = 'unhealthy'
+
+        # 检查活跃用户数
+        try:
+            active_users = User.query.filter_by(is_active=True).count()
+            total_bills = Bill.query.count()
+
+            health_status['checks']['application'] = {
+                'status': 'ok',
+                'active_users': active_users,
+                'total_bills': total_bills
+            }
+        except Exception as e:
+            health_status['checks']['application'] = {'status': 'error', 'message': f'应用状态检查失败: {str(e)}'}
+
+        # 设置HTTP状态码
+        status_code = 200
+        if health_status['status'] == 'unhealthy':
+            status_code = 503
+        elif health_status['status'] == 'degraded':
+            status_code = 200  # 降级但仍可用
+
+        return jsonify(health_status), status_code
+
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'timestamp': datetime.utcnow().isoformat(),
+            'error': f'健康检查失败: {str(e)}'
+        }), 503
+
+@app.route('/metrics')
+def metrics():
+    """系统指标端点（简化版Prometheus格式）"""
+    try:
+        # 基础指标
+        user_count = User.query.count()
+        bill_count = Bill.query.count()
+        settlement_count = Settlement.query.count()
+        receipt_count = Receipt.query.count()
+
+        # 磁盘使用情况
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage('.')
+            disk_usage_bytes = used
+            disk_total_bytes = total
+        except:
+            disk_usage_bytes = 0
+            disk_total_bytes = 0
+
+        # 上传文件总大小
+        total_upload_size = 0
+        try:
+            for receipt in Receipt.query.all():
+                if receipt.file_size:
+                    total_upload_size += receipt.file_size
+        except:
+            pass
+
+        metrics_data = f"""# HELP roommate_bills_users_total Total number of users
+# TYPE roommate_bills_users_total counter
+roommate_bills_users_total {user_count}
+
+# HELP roommate_bills_bills_total Total number of bills
+# TYPE roommate_bills_bills_total counter
+roommate_bills_bills_total {bill_count}
+
+# HELP roommate_bills_settlements_total Total number of settlements
+# TYPE roommate_bills_settlements_total counter
+roommate_bills_settlements_total {settlement_count}
+
+# HELP roommate_bills_receipts_total Total number of receipts
+# TYPE roommate_bills_receipts_total counter
+roommate_bills_receipts_total {receipt_count}
+
+# HELP roommate_bills_upload_size_bytes Total size of uploaded files
+# TYPE roommate_bills_upload_size_bytes gauge
+roommate_bills_upload_size_bytes {total_upload_size}
+
+# HELP roommate_bills_disk_usage_bytes Current disk usage
+# TYPE roommate_bills_disk_usage_bytes gauge
+roommate_bills_disk_usage_bytes {disk_usage_bytes}
+
+# HELP roommate_bills_disk_total_bytes Total disk space
+# TYPE roommate_bills_disk_total_bytes gauge
+roommate_bills_disk_total_bytes {disk_total_bytes}
+"""
+
+        return metrics_data, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+    except Exception as e:
+        return f"# Error generating metrics: {str(e)}", 500, {'Content-Type': 'text/plain; charset=utf-8'}
 
 if __name__ == '__main__':
     with app.app_context():

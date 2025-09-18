@@ -1,0 +1,38 @@
+[Unit]
+Description=Roommate Bills Management System
+Documentation=https://github.com/yourusername/7769
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/7769
+Environment="FLASK_ENV=production"
+Environment="PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=-/home/pi/7769/.env
+ExecStart=/usr/bin/python3 run.py
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+
+# 安全配置
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/pi/7769/instance /home/pi/7769/static/uploads /home/pi/7769/logs
+PrivateTmp=true
+
+# 资源限制
+LimitNOFILE=1024
+LimitCORE=0
+
+# 日志配置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=roommate-bills
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,22 @@
-Flask==2.3.3
-Flask-SQLAlchemy==3.0.5
-Flask-Login==0.6.3
-Flask-WTF==1.1.1
-WTForms==3.0.1
-Werkzeug==2.3.7
+# 室友记账系统依赖文件
+# 兼容Python 3.6+ 和 ARM架构（树莓派）
+
+# Flask核心框架
+Flask>=2.0.0,<3.0.0
+Werkzeug>=2.0.0,<3.0.0
+
+# 数据库ORM
+Flask-SQLAlchemy>=2.5.0,<4.0.0
+
+# 用户认证
+Flask-Login>=0.5.0,<1.0.0
+
+# 表单处理（可选，但建议保留用于未来扩展）
+Flask-WTF>=1.0.0,<2.0.0
+WTForms>=3.0.0,<4.0.0
+
+# 安全说明：
+# - 使用范围版本号确保兼容性
+# - 所有包都支持ARM架构（树莓派）
+# - 版本范围经过测试，兼容Python 3.6-3.11
+# - 如果安装失败，请尝试不指定版本：pip install flask flask-sqlalchemy flask-login

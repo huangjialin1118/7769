@@ -6,32 +6,41 @@
 
 ```
 7769/ (项目根目录)
-├── app.py                 # Flask 主应用文件
-├── models.py              # 数据库模型定义
-├── templates/             # HTML 模板
-│   ├── base.html         # 基础模板
-│   ├── index.html        # 首页
-│   ├── login.html        # 登录页（含密码重置功能）
-│   ├── add_bill.html     # 添加账单页
-│   ├── edit_bill.html    # 编辑账单页
-│   ├── dashboard.html    # 个人面板
-│   ├── admin.html        # 管理员面板
-│   └── admin_logs.html   # 登录日志页面
-├── static/               # 静态资源
-│   ├── css/style.css    # 样式文件
-│   ├── js/main.js       # JavaScript文件
-│   └── uploads/         # 上传文件存储
-│       └── receipts/    # 凭证文件存储目录
-├── instance/            # Flask实例文件夹
-│   └── database.db      # SQLite数据库
-├── __pycache__/         # Python缓存文件
-├── requirements.txt     # Python依赖
-├── README.md           # 项目文档（英文）
-├── README_CN.md        # 项目文档（中文）
-├── CLAUDE.md           # Claude配置文档
-├── .git/               # Git仓库
-├── .gitignore          # Git忽略文件
-└── .claude/            # Claude配置
+├── app.py                     # Flask 主应用文件
+├── run.py                     # 生产环境启动脚本
+├── config.py                  # 配置管理系统
+├── models.py                  # 数据库模型定义
+├── templates/                 # HTML 模板
+│   ├── base.html             # 基础模板
+│   ├── index.html            # 首页
+│   ├── login.html            # 登录页（含密码重置功能）
+│   ├── add_bill.html         # 添加账单页
+│   ├── edit_bill.html        # 编辑账单页
+│   ├── dashboard.html        # 个人面板
+│   ├── admin.html            # 管理员面板
+│   └── admin_logs.html       # 登录日志页面
+├── static/                   # 静态资源
+│   ├── css/style.css        # 样式文件
+│   ├── js/main.js           # JavaScript文件
+│   └── uploads/             # 上传文件存储
+│       └── receipts/        # 凭证文件存储目录
+├── instance/                # Flask实例文件夹
+│   └── database.db          # SQLite数据库
+├── logs/                    # 应用日志目录
+├── backups/                 # 自动备份目录
+├── __pycache__/             # Python缓存文件
+├── requirements.txt         # Python依赖（ARM兼容）
+├── .env.example            # 环境配置模板
+├── .env                    # 环境配置文件（运行时生成）
+├── roommate-bills.service  # systemd服务配置
+├── deploy_raspberry.sh     # 树莓派一键部署脚本
+├── README.md              # 项目文档（英文）
+├── README_CN.md           # 项目文档（中文）
+├── README_RASPBERRY_PI.md # 树莓派部署指南
+├── CLAUDE.md              # Claude配置文档
+├── .git/                  # Git仓库
+├── .gitignore             # Git忽略文件
+└── .claude/               # Claude配置
 ```
 
 ## 技术栈
@@ -71,13 +80,19 @@
 
 ## 开发环境
 
-- Python 3.12+
+- Python 3.6+ (兼容树莓派和ARM架构)
 - Flask开发服务器运行在端口7769
 - 使用虚拟环境管理依赖（可选）
 
 ## 启动方式
 
-### 方式1：直接启动（推荐）
+### 方式1：生产环境启动（推荐）
+```bash
+# 使用生产启动脚本（包含健康检查和版本验证）
+python3 run.py
+```
+
+### 方式2：开发环境直接启动
 ```bash
 # 使用绝对路径配置，无需考虑工作目录
 python3 app.py
@@ -85,12 +100,12 @@ python3 app.py
 source venv/bin/activate && python app.py
 ```
 
-### 方式2：使用依赖文件安装
+### 方式3：使用依赖文件安装
 ```bash
 # 安装所有依赖
 pip install -r requirements.txt
 # 然后启动
-python3 app.py
+python3 run.py  # 或 python3 app.py
 ```
 
 ## 路径配置
@@ -137,11 +152,46 @@ rm instance/database.db && python3 app.py
 
 ## 部署说明
 
-### 树莓派部署
+### 🍓 树莓派一键部署（推荐）
+**"下载即用"部署体验**：
+```bash
+# 1. 下载项目
+git clone https://github.com/yourusername/7769.git
+cd 7769
+
+# 2. 运行一键部署脚本
+bash deploy_raspberry.sh
+```
+
+**自动完成**：
+- ✅ 系统检测（树莓派型号、Python版本、磁盘空间）
+- ✅ 依赖安装（ARM架构兼容）
+- ✅ 环境配置（自动生成安全密钥）
+- ✅ 系统服务创建（开机自启）
+- ✅ 防火墙配置
+- ✅ 健康检查
+
+**访问地址**：`http://树莓派IP:7769`
+
+### 手动部署
 1. 传输项目文件到树莓派
-2. 安装依赖：`pip3 install flask flask-sqlalchemy flask-login werkzeug`
-3. 直接运行：`python3 app.py`
-4. 或创建系统服务实现开机自启
+2. 安装依赖：`pip3 install -r requirements.txt --user`
+3. 配置环境：`cp .env.example .env`
+4. 启动应用：`python3 run.py`
+5. 创建系统服务：`sudo cp roommate-bills.service /etc/systemd/system/`
+
+### 生产环境配置
+- **配置文件**: `config.py` - 分离开发/生产配置
+- **环境变量**: `.env` - 敏感信息和运行参数
+- **启动脚本**: `run.py` - 生产就绪的启动wrapper
+- **系统服务**: `roommate-bills.service` - systemd服务配置
+- **部署脚本**: `deploy_raspberry.sh` - 一键部署自动化
+
+### 健康监控
+- **健康检查**: `GET /health` - 应用状态检查
+- **系统指标**: `GET /metrics` - 性能和资源监控
+- **磁盘监控**: 自动检查SD卡可用空间
+- **温度监控**: 树莓派CPU温度警告
 
 ### Docker部署（未来支持）
 - 支持容器化部署
